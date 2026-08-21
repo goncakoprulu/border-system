@@ -8,6 +8,7 @@ ENV NEXT_TELEMETRY_DISABLED=1 \
     NEXT_PUBLIC_PUBLIC_SITE_URL=$NEXT_PUBLIC_PUBLIC_SITE_URL
 
 COPY apps/web/package.json apps/web/package-lock.json ./
+RUN npm install -g npm@12.0.2
 RUN npm ci
 
 COPY apps/web/ ./
