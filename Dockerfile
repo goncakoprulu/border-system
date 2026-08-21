@@ -14,7 +14,7 @@ COPY apps/web/ ./
 RUN npm run build
 
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine AS backend-build
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS backend-build
 WORKDIR /src
 
 COPY global.json ./
@@ -39,7 +39,7 @@ RUN dotnet publish src/Border.Api/Border.Api.csproj \
 COPY --from=web-build /src/apps/web/out/ /app/publish/wwwroot/
 
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine-extra AS final
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
 
 ENV ASPNETCORE_ENVIRONMENT=Production \
