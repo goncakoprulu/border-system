@@ -9,7 +9,8 @@ using Microsoft.OpenApi;
 using System.Net;
 
 var builder = WebApplication.CreateBuilder(args);
-var reverseProxyEnabled = builder.Configuration.GetValue<bool>("ReverseProxy:Enabled");
+var isRender = builder.Configuration.GetValue<bool>("RENDER");
+var reverseProxyEnabled = builder.Configuration.GetValue<bool>("ReverseProxy:Enabled") || isRender;
 var requireSecureCookies = builder.Configuration.GetValue<bool>("Security:RequireSecureCookies");
 var useHttpsRedirection = builder.Configuration.GetValue("Security:UseHttpsRedirection", true);
 var useHsts = builder.Configuration.GetValue<bool>("Security:UseHsts");
@@ -40,12 +41,25 @@ if (builder.Environment.IsProduction() || !string.IsNullOrWhiteSpace(configuredK
 if (reverseProxyEnabled)
 {
     var knownProxyAddresses = builder.Configuration.GetSection("ReverseProxy:KnownProxies").Get<string[]>() ?? [];
-    if (knownProxyAddresses.Length == 0)
+    if (!isRender && knownProxyAddresses.Length == 0)
         throw new InvalidOperationException("ReverseProxy:KnownProxies en az bir güvenilir proxy IP adresi içermelidir.");
 
     builder.Services.Configure<ForwardedHeadersOptions>(options =>
     {
-        options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+        options.ForwardLimit = 1;
+        options.ForwardedHeaders = isRender
+            ? ForwardedHeaders.XForwardedProto
+            : ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+
+        if (isRender)
+        {
+            // Render terminates TLS at its edge and forwards HTTP from dynamic proxy IPs.
+            // Trust one platform hop for the original scheme only; never accept a forwarded client IP here.
+            options.KnownIPNetworks.Clear();
+            options.KnownProxies.Clear();
+            return;
+        }
+
         foreach (var address in knownProxyAddresses)
         {
             if (!IPAddress.TryParse(address, out var proxyAddress))
