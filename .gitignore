@@ -1,0 +1,42 @@
+# .NET
+**/bin/
+**/obj/
+*.user
+*.suo
+.vs/
+
+# Node / Next.js
+**/node_modules/
+**/.next/
+**/out/
+*.tsbuildinfo
+
+# Environment and secrets
+**/.env
+**/.env.*
+**/appsettings.Production.json
+**/appsettings.Production.*.json
+**/secrets.json
+**/credentials.json
+*.pem
+*.key
+*.pfx
+*.p12
+
+# Editors / OS
+.idea/
+.git.generated/
+.DS_Store
+Thumbs.db
+
+# Test output
+TestResults/
+coverage/
+
+# Runtime state and generated deployment packages
+**/App_Data/DataProtectionKeys/
+**/publish/
+**/artifacts/
+**/dist/
+**/build/
+deployment/output/

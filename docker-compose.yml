@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: border-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${BORDER_POSTGRES_DB:-border}
+      POSTGRES_USER: ${BORDER_POSTGRES_USER:-border}
+      POSTGRES_PASSWORD: ${BORDER_POSTGRES_PASSWORD:-border_dev}
+      TZ: Europe/Istanbul
+    ports:
+      - "5433:5432"
+    volumes:
+      - border_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${BORDER_POSTGRES_USER:-border} -d ${BORDER_POSTGRES_DB:-border}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  border_postgres_data:

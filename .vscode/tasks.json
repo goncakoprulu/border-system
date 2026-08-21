@@ -1,0 +1,33 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "BORDER: PostgreSQL",
+      "type": "shell",
+      "command": "docker compose up -d postgres",
+      "problemMatcher": []
+    },
+    {
+      "label": "BORDER: API",
+      "type": "process",
+      "command": "dotnet",
+      "args": ["run", "--project", "src/Border.Api", "--launch-profile", "http"],
+      "isBackground": true,
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "BORDER: Web",
+      "type": "process",
+      "command": "npm",
+      "args": ["run", "dev", "--prefix", "apps/web"],
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "BORDER: Tümünü Başlat",
+      "dependsOrder": "sequence",
+      "dependsOn": ["BORDER: PostgreSQL", "BORDER: API", "BORDER: Web"],
+      "problemMatcher": []
+    }
+  ]
+}
