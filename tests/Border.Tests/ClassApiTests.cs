@@ -113,6 +113,24 @@ public sealed class ClassApiTests(StudentApiFactory factory) : IClassFixture<Stu
     }
 
     [Fact]
+    public async Task EnrollmentStatus_CanFreezeReactivateAndCancel_WhilePreservingHistory()
+    {
+        await factory.ResetAsync(); var seed = await SeedAsync(); using var client = Client("Reception");
+        var created = await MutationAsync(client, HttpMethod.Post, $"/api/classes/{seed.FirstClassId}/enrollments", new CreateEnrollmentRequest(seed.StudentOneId, new(2026, 8, 1)));
+        created.EnsureSuccessStatusCode(); var enrollment = await created.Content.ReadFromJsonAsync<ClassEnrollmentResponse>(JsonOptions);
+
+        var frozen = await MutationAsync(client, HttpMethod.Patch, $"/api/classes/{seed.FirstClassId}/enrollments/{enrollment!.Id}/status", new ChangeEnrollmentStatusRequest(EnrollmentStatus.Frozen));
+        frozen.EnsureSuccessStatusCode(); Assert.Equal(EnrollmentStatus.Frozen, (await frozen.Content.ReadFromJsonAsync<ClassEnrollmentResponse>(JsonOptions))!.Status);
+        var active = await MutationAsync(client, HttpMethod.Patch, $"/api/classes/{seed.FirstClassId}/enrollments/{enrollment.Id}/status", new ChangeEnrollmentStatusRequest(EnrollmentStatus.Active));
+        active.EnsureSuccessStatusCode();
+        var cancelled = await MutationAsync(client, HttpMethod.Patch, $"/api/classes/{seed.FirstClassId}/enrollments/{enrollment.Id}/status", new ChangeEnrollmentStatusRequest(EnrollmentStatus.Cancelled, new(2026, 8, 20)));
+        cancelled.EnsureSuccessStatusCode();
+
+        var detail = await client.GetFromJsonAsync<StudentDetailResponse>($"/api/students/{seed.StudentOneId}", JsonOptions);
+        var history = Assert.Single(detail!.ClassEnrollments); Assert.Equal(EnrollmentStatus.Cancelled, history.Status); Assert.Equal(new DateOnly(2026, 8, 20), history.EndDate);
+    }
+
+    [Fact]
     public async Task ArchivedClass_IsHidden_AndOnlyManagementCanIncludeIt()
     {
         await factory.ResetAsync();

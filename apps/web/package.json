@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "test:schedule-days": "node scripts/test-schedule-days.mjs",
-    "test:actions": "node scripts/test-operational-actions.mjs"
+    "test:actions": "node scripts/test-operational-actions.mjs",
+    "test:student-workspace": "node scripts/test-student-workspace.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",

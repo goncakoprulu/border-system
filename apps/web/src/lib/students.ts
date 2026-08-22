@@ -18,7 +18,7 @@ export type StudentDetail = StudentListItem & {
   birthDate: string | null; gender: string | null; notes: string | null; createdAt: string; updatedAt: string; guardians: Guardian[];
   classEnrollments: StudentClassEnrollment[];
 };
-export type StudentClassEnrollment = { id: string; classId: string; className: string; instructorName: string; roomName: string; startDate: string; endDate: string | null; status: "Active" | "Frozen" | "Completed" | "Cancelled"; schedules: { dayOfWeek: number; startTime: string; endTime: string }[] };
+export type StudentClassEnrollment = { enrollmentId: string; classId: string; className: string; instructorName: string; roomName: string; startDate: string; endDate: string | null; status: "Active" | "Frozen" | "Completed" | "Cancelled"; schedules: { dayOfWeek: number; startTime: string; endTime: string }[] };
 export type StudentInput = {
   firstName: string; lastName: string; phone: string | null; email: string | null; birthDate: string | null;
   gender: string | null; notes: string | null; status: StudentStatus; registrationDate: string;

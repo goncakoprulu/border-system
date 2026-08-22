@@ -30,6 +30,7 @@ export const classesApi = {
   archive: (id: string) => apiMutation<void>(`/api/classes/${id}`, "DELETE"),
   enroll: (id: string, studentId: string, startDate: string) => apiMutation<ClassEnrollment>(`/api/classes/${id}/enrollments`, "POST", { studentId, startDate }),
   endEnrollment: (id: string, enrollmentId: string, endDate: string | null) => apiMutation<ClassEnrollment>(`/api/classes/${id}/enrollments/${enrollmentId}/end`, "PATCH", { endDate }),
+  changeEnrollmentStatus: (id: string, enrollmentId: string, status: "Active" | "Frozen" | "Completed" | "Cancelled", endDate: string | null = null) => apiMutation<ClassEnrollment>(`/api/classes/${id}/enrollments/${enrollmentId}/status`, "PATCH", { status, endDate }),
   instructors: () => apiQuery<InstructorOption[]>("/api/instructors/options"),
   instructorRecords: () => apiQuery<InstructorRecord[]>("/api/instructors"),
   instructorLogins: () => apiQuery<InstructorLoginOption[]>("/api/instructors/login-options"),

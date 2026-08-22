@@ -8,6 +8,8 @@ public sealed record AttendanceStudentResponse(Guid StudentId, string StudentNam
 public sealed record AttendanceDetailResponse(SessionListItemResponse Session, IReadOnlyCollection<AttendanceStudentResponse> Students);
 public sealed record AttendanceEntryRequest(Guid StudentId, AttendanceStatus Status, string? Notes);
 public sealed record SaveAttendanceRequest(IReadOnlyCollection<AttendanceEntryRequest> Entries);
+public sealed record StudentAttendanceHistoryItemResponse(Guid AttendanceId, Guid SessionId, Guid ClassId, string ClassName, DateTime ScheduledStart, AttendanceStatus Status, string? Notes);
+public sealed record StudentAttendanceHistoryResponse(int Total, int Present, int Absent, int Excused, int Late, int MakeUp, decimal AttendanceRate, IReadOnlyCollection<StudentAttendanceHistoryItemResponse> Items);
 
 public sealed record MembershipListItemResponse(Guid Id, Guid StudentId, string StudentName, Guid PlanId, string PlanName, MembershipPlanType PlanType, DateOnly StartDate, DateOnly? EndDate, MembershipStatus Status, decimal Price, int? RemainingLessons);
 public sealed record CreateMembershipRequest(Guid StudentId, Guid PlanId, DateOnly StartDate, DateOnly? EndDate, decimal? Price, decimal? DiscountAmount, string? DiscountReason);
@@ -20,6 +22,10 @@ public sealed record CreatePaymentRequest(Guid StudentId, Guid? InvoiceId, decim
 public sealed record BalanceListItemResponse(Guid StudentId, string StudentName, decimal TotalDebt, decimal Paid, decimal Remaining, DateTime? LastPaymentDate);
 public sealed record BalanceSummaryResponse(decimal OpenBalance, int DebtorCount, decimal CollectedThisMonth, decimal OverdueTotal);
 public sealed record BalancesResponse(BalanceSummaryResponse Summary, IReadOnlyCollection<BalanceListItemResponse> Items);
+public sealed record StudentMembershipOverviewResponse(Guid Id, Guid PlanId, string PlanName, DateOnly StartDate, DateOnly? EndDate, MembershipStatus Status, decimal Price, decimal? DiscountAmount, string? DiscountReason);
+public sealed record StudentInvoiceHistoryResponse(Guid Id, string Description, decimal Amount, decimal Paid, decimal Remaining, DateOnly DueDate, InvoiceStatus Status);
+public sealed record StudentPaymentHistoryResponse(Guid Id, Guid? InvoiceId, string? InvoiceDescription, decimal Amount, DateTime PaymentDate, PaymentMethod PaymentMethod, string? Notes);
+public sealed record StudentFinanceOverviewResponse(decimal TotalInvoiced, decimal TotalPaid, decimal OpenBalance, decimal OverdueBalance, IReadOnlyCollection<StudentMembershipOverviewResponse> Memberships, IReadOnlyCollection<StudentInvoiceHistoryResponse> Invoices, IReadOnlyCollection<StudentPaymentHistoryResponse> Payments);
 
 public sealed record ReportPointResponse(string Label, decimal Value);
 public sealed record ReportsResponse(int ActiveStudents, int ActiveClasses, decimal CollectedThisMonth, decimal OpenBalance, decimal AverageOccupancy, decimal AttendanceRate, IReadOnlyCollection<ReportPointResponse> MonthlyCollections, IReadOnlyCollection<ReportPointResponse> StudentStatuses, IReadOnlyCollection<ReportPointResponse> ClassOccupancies);
@@ -30,9 +36,10 @@ public sealed record UpdateUserRequest(string DisplayName, bool IsActive, IReadO
 public interface IOperationsService
 {
     Task<IReadOnlyCollection<ScheduleItemResponse>> GetScheduleAsync(Guid? roomId, Guid? instructorId, DayOfWeek? day, Guid? classId, CancellationToken ct);
-    Task<IReadOnlyCollection<SessionListItemResponse>> GetSessionsAsync(DateOnly date, Guid? instructorId, Guid? classId, Guid? roomId, string? userId, bool instructorOnly, CancellationToken ct);
+    Task<IReadOnlyCollection<SessionListItemResponse>> GetSessionsAsync(DateOnly date, Guid? instructorId, Guid? classId, Guid? roomId, Guid? studentId, string? userId, bool instructorOnly, CancellationToken ct);
     Task<AttendanceDetailResponse?> GetAttendanceAsync(Guid sessionId, string? userId, bool instructorOnly, CancellationToken ct);
     Task<AttendanceDetailResponse?> SaveAttendanceAsync(Guid sessionId, SaveAttendanceRequest request, string userId, bool instructorOnly, CancellationToken ct);
+    Task<StudentAttendanceHistoryResponse?> GetStudentAttendanceHistoryAsync(Guid studentId, CancellationToken ct);
     Task<IReadOnlyCollection<MembershipListItemResponse>> GetMembershipsAsync(string? search, MembershipStatus? status, CancellationToken ct);
     Task<MembershipListItemResponse> CreateMembershipAsync(CreateMembershipRequest request, string userId, CancellationToken ct);
     Task<IReadOnlyCollection<MembershipPlanResponse>> GetPlansAsync(bool activeOnly, CancellationToken ct);
@@ -42,6 +49,7 @@ public interface IOperationsService
     Task<IReadOnlyCollection<InvoiceOptionResponse>> GetOpenInvoicesAsync(Guid studentId, CancellationToken ct);
     Task<PaymentListItemResponse> CreatePaymentAsync(CreatePaymentRequest request, string userId, CancellationToken ct);
     Task<BalancesResponse> GetBalancesAsync(string? search, CancellationToken ct);
+    Task<StudentFinanceOverviewResponse?> GetStudentFinanceOverviewAsync(Guid studentId, CancellationToken ct);
     Task<ReportsResponse> GetReportsAsync(CancellationToken ct);
     Task<InstructorDetailResponse?> GetInstructorAsync(Guid id, CancellationToken ct);
 }

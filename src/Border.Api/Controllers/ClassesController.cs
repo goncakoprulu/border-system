@@ -122,6 +122,14 @@ public sealed class ClassesController(IClassService classService) : ControllerBa
     public async Task<ActionResult<ClassEnrollmentResponse>> EndEnrollment(Guid id, Guid enrollmentId, EndEnrollmentRequest request, CancellationToken cancellationToken) =>
         EnrollmentOperation(await classService.EndEnrollmentAsync(id, enrollmentId, request, cancellationToken));
 
+    [HttpPatch("{id:guid}/enrollments/{enrollmentId:guid}/status")]
+    [Authorize(Policy = Policies.ClassesManage)]
+    public async Task<ActionResult<ClassEnrollmentResponse>> ChangeEnrollmentStatus(Guid id, Guid enrollmentId, ChangeEnrollmentStatusRequest request, CancellationToken cancellationToken)
+    {
+        if (!Enum.IsDefined(request.Status)) return ValidationError(new() { ["status"] = ["Geçerli bir sınıf kayıt durumu seçin."] });
+        return EnrollmentOperation(await classService.ChangeEnrollmentStatusAsync(id, enrollmentId, request, cancellationToken));
+    }
+
     private ClassAccessScope Scope() => new(IsInstructorOnly(), User.FindFirstValue(ClaimTypes.NameIdentifier));
     private bool IsInstructorOnly() => User.IsInRole(Roles.Instructor) && !User.IsInRole(Roles.Admin) && !User.IsInRole(Roles.Management) && !User.IsInRole(Roles.Reception);
     private bool CanArchive() => User.IsInRole(Roles.Admin) || User.IsInRole(Roles.Management);

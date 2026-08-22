@@ -19,8 +19,8 @@ public sealed class OperationsController(IOperationsService operations, UserMana
 
     [HttpGet("attendance/sessions")]
     [Authorize(Policy = Policies.OperationsAccess)]
-    public async Task<ActionResult<IReadOnlyCollection<SessionListItemResponse>>> Sessions([FromQuery] DateOnly? date, [FromQuery] Guid? instructorId, [FromQuery] Guid? classId, [FromQuery] Guid? roomId, CancellationToken ct) =>
-        Ok(await operations.GetSessionsAsync(date ?? Today(), instructorId, classId, roomId, UserId(), InstructorOnly(), ct));
+    public async Task<ActionResult<IReadOnlyCollection<SessionListItemResponse>>> Sessions([FromQuery] DateOnly? date, [FromQuery] Guid? instructorId, [FromQuery] Guid? classId, [FromQuery] Guid? roomId, [FromQuery] Guid? studentId, CancellationToken ct) =>
+        Ok(await operations.GetSessionsAsync(date ?? Today(), instructorId, classId, roomId, studentId, UserId(), InstructorOnly(), ct));
 
     [HttpGet("attendance/sessions/{id:guid}")]
     [Authorize(Policy = Policies.OperationsAccess)]
@@ -30,6 +30,11 @@ public sealed class OperationsController(IOperationsService operations, UserMana
     [Authorize(Policy = Policies.OperationsAccess)]
     public async Task<ActionResult<AttendanceDetailResponse>> SaveAttendance(Guid id, SaveAttendanceRequest request, CancellationToken ct)
     { try { var result = await operations.SaveAttendanceAsync(id, request, UserId()!, InstructorOnly(), ct); return result is null ? NotFound() : Ok(result); } catch (InvalidOperationException ex) { return Validation(ex.Message); } }
+
+    [HttpGet("students/{studentId:guid}/attendance-history")]
+    [Authorize(Policy = Policies.OperationsAccess)]
+    public async Task<ActionResult<StudentAttendanceHistoryResponse>> StudentAttendanceHistory(Guid studentId, CancellationToken ct)
+    { var result = await operations.GetStudentAttendanceHistoryAsync(studentId, ct); return result is null ? NotFound() : Ok(result); }
 
     [HttpGet("memberships")]
     [Authorize(Policy = Policies.FinanceAccess)]
@@ -70,6 +75,11 @@ public sealed class OperationsController(IOperationsService operations, UserMana
     [HttpGet("balances")]
     [Authorize(Policy = Policies.FinanceAccess)]
     public async Task<ActionResult<BalancesResponse>> Balances([FromQuery] string? search, CancellationToken ct) => Ok(await operations.GetBalancesAsync(search, ct));
+
+    [HttpGet("students/{studentId:guid}/finance-overview")]
+    [Authorize(Policy = Policies.FinanceAccess)]
+    public async Task<ActionResult<StudentFinanceOverviewResponse>> StudentFinanceOverview(Guid studentId, CancellationToken ct)
+    { var result = await operations.GetStudentFinanceOverviewAsync(studentId, ct); return result is null ? NotFound() : Ok(result); }
 
     [HttpGet("reports")]
     [Authorize(Policy = Policies.ReportsAccess)]

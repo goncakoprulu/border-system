@@ -2,6 +2,8 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, ChevronRight, CircleAlert, ClipboardCheck, LoaderCircle, RotateCcw, Search, StickyNote, X } from "lucide-react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -38,6 +40,8 @@ function sessionState(session: Session) {
 }
 
 export function AttendanceSection() {
+  const searchParams = useSearchParams();
+  const studentId = searchParams.get("studentId") ?? "";
   const queryClient = useQueryClient();
   const saveLock = useRef(false);
   const [selectedId, setSelectedId] = useState("");
@@ -55,8 +59,9 @@ export function AttendanceSection() {
     if (instructorId) query.set("instructorId", instructorId);
     if (classId) query.set("classId", classId);
     if (roomId) query.set("roomId", roomId);
+    if (studentId) query.set("studentId", studentId);
     return query.toString();
-  }, [classId, instructorId, roomId, selectedDate]);
+  }, [classId, instructorId, roomId, selectedDate, studentId]);
 
   const sessions = useQuery({ queryKey: operationKeys.section("sessions", params), queryFn: () => operationsApi.sessions(params) });
   const detail = useQuery({ queryKey: operationKeys.section("attendance", selectedId), queryFn: () => operationsApi.attendance(selectedId), enabled: !!selectedId });
@@ -126,6 +131,7 @@ export function AttendanceSection() {
   }
 
   return <Panel>
+    {studentId && <div className="flex items-center justify-between gap-3 border-b bg-[#f5f7f2] px-4 py-3 text-sm text-[#526743]"><span>Öğrenci filtresi aktif</span><Button size="sm" variant="ghost" render={<Link href="/attendance" />}><X />Filtreyi kaldır</Button></div>}
     <div className="grid gap-3 border-b p-4 sm:grid-cols-2 lg:grid-cols-4">
       <Field label="Tarih"><Input type="date" value={selectedDate} onChange={(event) => { setSelectedDate(event.target.value); changeSelection(""); }}/></Field>
       <Filter label="Eğitmen" value={instructorId} onChange={setInstructorId} options={(instructors.data ?? []).map((item) => ({ value: item.id, label: item.fullName }))}/>

@@ -23,7 +23,7 @@ internal sealed class OperationsService(BorderDbContext db) : IOperationsService
             .Select(x => new ScheduleItemResponse(x.StudioClassId, x.StudioClass.Name, x.StudioClass.Instructor.FirstName + " " + x.StudioClass.Instructor.LastName, x.StudioClass.InstructorId, x.StudioClass.StudioRoom.Name, x.StudioClass.StudioRoomId, x.DayOfWeek, x.StartTime, x.EndTime, x.StudioClass.Level)).ToListAsync(ct);
     }
 
-    public async Task<IReadOnlyCollection<SessionListItemResponse>> GetSessionsAsync(DateOnly date, Guid? instructorId, Guid? classId, Guid? roomId, string? userId, bool instructorOnly, CancellationToken ct)
+    public async Task<IReadOnlyCollection<SessionListItemResponse>> GetSessionsAsync(DateOnly date, Guid? instructorId, Guid? classId, Guid? roomId, Guid? studentId, string? userId, bool instructorOnly, CancellationToken ct)
     {
         await EnsureSessionsAsync(date, ct);
         var start = IstanbulStart(date); var end = start.AddDays(1);
@@ -32,6 +32,7 @@ internal sealed class OperationsService(BorderDbContext db) : IOperationsService
         if (instructorId.HasValue) query = query.Where(x => x.InstructorId == instructorId);
         if (classId.HasValue) query = query.Where(x => x.StudioClassId == classId);
         if (roomId.HasValue) query = query.Where(x => x.StudioRoomId == roomId);
+        if (studentId.HasValue) query = query.Where(x => db.Attendances.Any(a => a.LessonSessionId == x.Id && a.StudentId == studentId) || db.ClassEnrollments.Any(e => e.StudioClassId == x.StudioClassId && e.StudentId == studentId && e.Status == EnrollmentStatus.Active && e.StartDate <= date && (e.EndDate == null || e.EndDate >= date)));
         return await query.OrderBy(x => x.ScheduledStart).Select(x => new SessionListItemResponse(x.Id, x.StudioClassId, x.StudioClass.Name, x.InstructorId, x.Instructor.FirstName + " " + x.Instructor.LastName, x.StudioRoomId, x.StudioRoom.Name, x.ScheduledStart, x.ScheduledEnd,
             db.ClassEnrollments.Count(e => e.StudioClassId == x.StudioClassId && e.Status == EnrollmentStatus.Active && e.StartDate <= date && (e.EndDate == null || e.EndDate >= date)),
             db.Attendances.Count(a => a.LessonSessionId == x.Id),
@@ -62,6 +63,28 @@ internal sealed class OperationsService(BorderDbContext db) : IOperationsService
         foreach (var item in request.Entries) { if (existing.TryGetValue(item.StudentId, out var row)) { row.Status = item.Status; row.Notes = Clean(item.Notes); row.UpdatedAt = DateTime.UtcNow; row.RecordedByUserId = userId; } else db.Attendances.Add(new Attendance { LessonSessionId = sessionId, StudentId = item.StudentId, Status = item.Status, Notes = Clean(item.Notes), RecordedByUserId = userId }); }
         var session = await db.LessonSessions.SingleAsync(x => x.Id == sessionId, ct); session.Status = LessonSessionStatus.Completed;
         await db.SaveChangesAsync(ct); return await GetAttendanceAsync(sessionId, userId, instructorOnly, ct);
+    }
+
+    public async Task<StudentAttendanceHistoryResponse?> GetStudentAttendanceHistoryAsync(Guid studentId, CancellationToken ct)
+    {
+        if (!await db.Students.AsNoTracking().AnyAsync(x => x.Id == studentId && !x.IsDeleted, ct)) return null;
+        var counts = await db.Attendances.AsNoTracking().Where(x => x.StudentId == studentId)
+            .GroupBy(_ => 1).Select(group => new
+            {
+                Total = group.Count(),
+                Present = group.Count(x => x.Status == AttendanceStatus.Present),
+                Absent = group.Count(x => x.Status == AttendanceStatus.Absent),
+                Excused = group.Count(x => x.Status == AttendanceStatus.Excused),
+                Late = group.Count(x => x.Status == AttendanceStatus.Late),
+                MakeUp = group.Count(x => x.Status == AttendanceStatus.MakeUp),
+            }).SingleOrDefaultAsync(ct);
+        var items = await db.Attendances.AsNoTracking().Where(x => x.StudentId == studentId)
+            .OrderByDescending(x => x.LessonSession.ScheduledStart).Take(10)
+            .Select(x => new StudentAttendanceHistoryItemResponse(x.Id, x.LessonSessionId, x.LessonSession.StudioClassId, x.LessonSession.StudioClass.Name, x.LessonSession.ScheduledStart, x.Status, x.Notes))
+            .ToListAsync(ct);
+        if (counts is null) return new(0, 0, 0, 0, 0, 0, 0, items);
+        var rate = counts.Total == 0 ? 0 : Math.Round(100m * (counts.Present + counts.Late) / counts.Total, 1);
+        return new(counts.Total, counts.Present, counts.Absent, counts.Excused, counts.Late, counts.MakeUp, rate, items);
     }
 
     private async Task EnsureSessionsAsync(DateOnly date, CancellationToken ct)
@@ -119,6 +142,31 @@ internal sealed class OperationsService(BorderDbContext db) : IOperationsService
     public async Task<PaymentListItemResponse> CreatePaymentAsync(CreatePaymentRequest r, string userId, CancellationToken ct) { if (r.Amount <= 0) throw new InvalidOperationException("Ödeme tutarı sıfırdan büyük olmalıdır."); if (!await db.Students.AnyAsync(x => x.Id == r.StudentId && !x.IsDeleted, ct)) throw new InvalidOperationException("Öğrenci bulunamadı."); Invoice? invoice = null; if (r.InvoiceId.HasValue) { invoice = await db.Invoices.SingleOrDefaultAsync(x => x.Id == r.InvoiceId && x.StudentId == r.StudentId && x.Status != InvoiceStatus.Cancelled, ct) ?? throw new InvalidOperationException("Açık borç bulunamadı."); var paid = await db.Payments.Where(x => x.InvoiceId == invoice.Id).SumAsync(x => (decimal?)x.Amount, ct) ?? 0; if (paid + r.Amount > invoice.Amount) throw new InvalidOperationException("Ödeme açık borç tutarını aşamaz."); invoice.Status = paid + r.Amount == invoice.Amount ? InvoiceStatus.Paid : InvoiceStatus.PartiallyPaid; } var p = new Payment { StudentId = r.StudentId, InvoiceId = r.InvoiceId, Amount = r.Amount, PaymentMethod = r.PaymentMethod, PaymentDate = r.PaymentDate?.ToUniversalTime() ?? DateTime.UtcNow, Notes = Clean(r.Notes), ReceivedByUserId = userId }; db.Add(p); await db.SaveChangesAsync(ct); return (await GetPaymentsAsync(null, null, null, ct)).Single(x => x.Id == p.Id); }
 
     public async Task<BalancesResponse> GetBalancesAsync(string? search, CancellationToken ct) { var students = db.Students.AsNoTracking().Where(x => !x.IsDeleted); if (!string.IsNullOrWhiteSpace(search)) { var s = search.Trim().ToLower(); students = students.Where(x => (x.FirstName + " " + x.LastName).ToLower().Contains(s)); } var items = await students.Select(x => new BalanceListItemResponse(x.Id, x.FirstName + " " + x.LastName, db.Invoices.Where(i => i.StudentId == x.Id && i.Status != InvoiceStatus.Cancelled).Sum(i => (decimal?)i.Amount) ?? 0, db.Payments.Where(p => p.StudentId == x.Id && p.InvoiceId != null).Sum(p => (decimal?)p.Amount) ?? 0, (db.Invoices.Where(i => i.StudentId == x.Id && i.Status != InvoiceStatus.Cancelled).Sum(i => (decimal?)i.Amount) ?? 0) - (db.Payments.Where(p => p.StudentId == x.Id && p.InvoiceId != null).Sum(p => (decimal?)p.Amount) ?? 0), db.Payments.Where(p => p.StudentId == x.Id).Max(p => (DateTime?)p.PaymentDate))).Where(x => x.Remaining > 0).OrderByDescending(x => x.Remaining).ToListAsync(ct); var month = new DateOnly(DateTime.UtcNow.AddHours(3).Year, DateTime.UtcNow.AddHours(3).Month, 1); var monthStart = IstanbulStart(month); var collected = await db.Payments.Where(x => x.PaymentDate >= monthStart).SumAsync(x => (decimal?)x.Amount, ct) ?? 0; var today = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(3)); var overdue = await db.Invoices.Where(x => x.DueDate < today && x.Status != InvoiceStatus.Paid && x.Status != InvoiceStatus.Cancelled).SumAsync(x => (decimal?)x.Amount, ct) ?? 0; var overduePaid = await db.Payments.Where(x => x.InvoiceId != null && x.Invoice!.DueDate < today && x.Invoice.Status != InvoiceStatus.Cancelled).SumAsync(x => (decimal?)x.Amount, ct) ?? 0; return new(new(items.Sum(x => x.Remaining), items.Count, collected, Math.Max(0, overdue - overduePaid)), items); }
+
+    public async Task<StudentFinanceOverviewResponse?> GetStudentFinanceOverviewAsync(Guid studentId, CancellationToken ct)
+    {
+        if (!await db.Students.AsNoTracking().AnyAsync(x => x.Id == studentId && !x.IsDeleted, ct)) return null;
+        var today = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(3));
+        var memberships = await db.StudentMemberships.AsNoTracking().Where(x => x.StudentId == studentId)
+            .OrderByDescending(x => x.Status == MembershipStatus.Active).ThenByDescending(x => x.StartDate).Take(5)
+            .Select(x => new StudentMembershipOverviewResponse(
+                x.Id, x.MembershipPlanId, x.MembershipPlan.Name, x.StartDate, x.EndDate, x.Status,
+                db.MembershipPriceHistory.Where(p => p.StudentMembershipId == x.Id && p.EffectiveFrom <= today && (p.EffectiveTo == null || p.EffectiveTo >= today)).OrderByDescending(p => p.EffectiveFrom).Select(p => (decimal?)p.Price).FirstOrDefault() ?? x.MembershipPlan.DefaultPrice,
+                db.MembershipPriceHistory.Where(p => p.StudentMembershipId == x.Id && p.EffectiveFrom <= today && (p.EffectiveTo == null || p.EffectiveTo >= today)).OrderByDescending(p => p.EffectiveFrom).Select(p => p.DiscountAmount).FirstOrDefault(),
+                db.MembershipPriceHistory.Where(p => p.StudentMembershipId == x.Id && p.EffectiveFrom <= today && (p.EffectiveTo == null || p.EffectiveTo >= today)).OrderByDescending(p => p.EffectiveFrom).Select(p => p.DiscountReason).FirstOrDefault()))
+            .ToListAsync(ct);
+        var invoiceRows = await db.Invoices.AsNoTracking().Where(x => x.StudentId == studentId && x.Status != InvoiceStatus.Cancelled)
+            .Select(x => new { Invoice = x, Paid = db.Payments.Where(p => p.InvoiceId == x.Id).Sum(p => (decimal?)p.Amount) ?? 0 })
+            .ToListAsync(ct);
+        var invoices = invoiceRows.OrderByDescending(x => x.Invoice.DueDate).Take(5)
+            .Select(x => new StudentInvoiceHistoryResponse(x.Invoice.Id, x.Invoice.Description, x.Invoice.Amount, x.Paid, Math.Max(0, x.Invoice.Amount - x.Paid), x.Invoice.DueDate, x.Invoice.Status)).ToList();
+        var payments = await db.Payments.AsNoTracking().Where(x => x.StudentId == studentId).OrderByDescending(x => x.PaymentDate).Take(5)
+            .Select(x => new StudentPaymentHistoryResponse(x.Id, x.InvoiceId, x.Invoice == null ? null : x.Invoice.Description, x.Amount, x.PaymentDate, x.PaymentMethod, x.Notes)).ToListAsync(ct);
+        var totalInvoiced = invoiceRows.Sum(x => x.Invoice.Amount); var totalPaid = invoiceRows.Sum(x => x.Paid);
+        var openBalance = invoiceRows.Sum(x => Math.Max(0, x.Invoice.Amount - x.Paid));
+        var overdue = invoiceRows.Where(x => x.Invoice.DueDate < today).Sum(x => Math.Max(0, x.Invoice.Amount - x.Paid));
+        return new(totalInvoiced, totalPaid, openBalance, overdue, memberships, invoices, payments);
+    }
 
     public async Task<ReportsResponse> GetReportsAsync(CancellationToken ct) { var balances = await GetBalancesAsync(null, ct); var activeStudents = await db.Students.CountAsync(x => !x.IsDeleted && x.Status == StudentStatus.Active, ct); var activeClasses = await db.StudioClasses.CountAsync(x => !x.IsDeleted && x.Status == StudioClassStatus.Active, ct); var occupancy = activeClasses == 0 ? 0 : await db.StudioClasses.Where(x => !x.IsDeleted && x.Status == StudioClassStatus.Active).AverageAsync(x => 100m * db.ClassEnrollments.Count(e => e.StudioClassId == x.Id && e.Status == EnrollmentStatus.Active) / x.Capacity, ct); var attendanceTotal = await db.Attendances.CountAsync(ct); var attendanceRate = attendanceTotal == 0 ? 0 : 100m * await db.Attendances.CountAsync(x => x.Status == AttendanceStatus.Present || x.Status == AttendanceStatus.Late, ct) / attendanceTotal; var now = DateTime.UtcNow.AddHours(3); var monthly = new List<ReportPointResponse>(); for (var i = 5; i >= 0; i--) { var local = new DateOnly(now.Year, now.Month, 1).AddMonths(-i); var start = IstanbulStart(local); var end = IstanbulStart(local.AddMonths(1)); monthly.Add(new(local.ToString("yyyy-MM"), await db.Payments.Where(x => x.PaymentDate >= start && x.PaymentDate < end).SumAsync(x => (decimal?)x.Amount, ct) ?? 0)); } var statuses = await db.Students.Where(x => !x.IsDeleted).GroupBy(x => x.Status).Select(x => new ReportPointResponse(x.Key.ToString(), x.Count())).ToListAsync(ct); var classes = await db.StudioClasses.Where(x => !x.IsDeleted && x.Status == StudioClassStatus.Active).OrderBy(x => x.Name).Select(x => new ReportPointResponse(x.Name, 100m * db.ClassEnrollments.Count(e => e.StudioClassId == x.Id && e.Status == EnrollmentStatus.Active) / x.Capacity)).ToListAsync(ct); return new(activeStudents, activeClasses, balances.Summary.CollectedThisMonth, balances.Summary.OpenBalance, Math.Round(occupancy, 1), Math.Round(attendanceRate, 1), monthly, statuses, classes); }
     public async Task<InstructorDetailResponse?> GetInstructorAsync(Guid id, CancellationToken ct) { var x = await db.Instructors.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id, ct); if (x is null) return null; var linked = x.UserId == null ? null : await db.Users.Where(u => u.Id == x.UserId).Select(u => u.DisplayName).SingleOrDefaultAsync(ct); var schedule = await GetScheduleAsync(null, id, null, null, ct); return new(x.Id, x.FirstName, x.LastName, x.Phone, x.Email, x.UserId, linked, x.IsDeleted, await db.StudioClasses.CountAsync(c => c.InstructorId == id && !c.IsDeleted && c.Status == StudioClassStatus.Active, ct), schedule); }

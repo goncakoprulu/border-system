@@ -90,6 +90,42 @@ public sealed class OperationsApiTests(StudentApiFactory factory) : IClassFixtur
         var balances = await client.GetFromJsonAsync<BalancesResponse>("/api/balances", JsonOptions); var balance = Assert.Single(balances!.Items); Assert.Equal(1000m, balance.TotalDebt); Assert.Equal(400m, balance.Paid); Assert.Equal(600m, balance.Remaining);
     }
 
+    [Fact]
+    public async Task StudentWorkspace_ReturnsFinanceAndAttendanceHistory()
+    {
+        await factory.ResetAsync(); var seed = await SeedAsync(); using var client = Client("Reception");
+        var membership = await Mutation(client, HttpMethod.Post, "/api/memberships", new CreateMembershipRequest(seed.StudentId, seed.PlanId, new(2026, 8, 1), null, 900m, 100m, "Erken kayıt"));
+        membership.EnsureSuccessStatusCode();
+        var invoice = Assert.Single((await client.GetFromJsonAsync<IReadOnlyCollection<InvoiceOptionResponse>>($"/api/students/{seed.StudentId}/open-invoices", JsonOptions))!);
+        (await Mutation(client, HttpMethod.Post, "/api/payments", new CreatePaymentRequest(seed.StudentId, invoice.Id, 400m, PaymentMethod.CreditCard, new DateTime(2026, 8, 10, 9, 0, 0, DateTimeKind.Utc), "İlk ödeme"))).EnsureSuccessStatusCode();
+        (await Mutation(client, HttpMethod.Put, $"/api/attendance/sessions/{seed.SessionId}", new SaveAttendanceRequest([new(seed.StudentId, AttendanceStatus.Late, "Trafik")]))).EnsureSuccessStatusCode();
+
+        var finance = await client.GetFromJsonAsync<StudentFinanceOverviewResponse>($"/api/students/{seed.StudentId}/finance-overview", JsonOptions);
+        Assert.Equal(800m, finance!.TotalInvoiced); Assert.Equal(400m, finance.TotalPaid); Assert.Equal(400m, finance.OpenBalance);
+        Assert.Equal(100m, Assert.Single(finance.Memberships).DiscountAmount); Assert.Single(finance.Invoices); Assert.Single(finance.Payments);
+        var attendance = await client.GetFromJsonAsync<StudentAttendanceHistoryResponse>($"/api/students/{seed.StudentId}/attendance-history", JsonOptions);
+        Assert.Equal(1, attendance!.Total); Assert.Equal(1, attendance.Late); Assert.Equal(100m, attendance.AttendanceRate); Assert.Equal("Trafik", Assert.Single(attendance.Items).Notes);
+
+        (await Mutation(client, HttpMethod.Post, "/api/payments", new CreatePaymentRequest(seed.StudentId, invoice.Id, 400m, PaymentMethod.Cash, new DateTime(2026, 8, 11, 9, 0, 0, DateTimeKind.Utc), "Kalan ödeme"))).EnsureSuccessStatusCode();
+        var paidFinance = await client.GetFromJsonAsync<StudentFinanceOverviewResponse>($"/api/students/{seed.StudentId}/finance-overview", JsonOptions);
+        Assert.Equal(800m, paidFinance!.TotalPaid); Assert.Equal(0m, paidFinance.OpenBalance); Assert.Equal(2, paidFinance.Payments.Count);
+
+        var filteredSessions = await client.GetFromJsonAsync<IReadOnlyCollection<SessionListItemResponse>>($"/api/attendance/sessions?date=2026-08-22&studentId={seed.StudentId}", JsonOptions);
+        Assert.Single(filteredSessions!);
+    }
+
+    [Fact]
+    public async Task StudentWorkspace_EmptyHistoryAndPermissions_AreHandled()
+    {
+        await factory.ResetAsync(); var seed = await SeedAsync(); using var reception = Client("Reception");
+        var finance = await reception.GetFromJsonAsync<StudentFinanceOverviewResponse>($"/api/students/{seed.StudentId}/finance-overview", JsonOptions);
+        var attendance = await reception.GetFromJsonAsync<StudentAttendanceHistoryResponse>($"/api/students/{seed.StudentId}/attendance-history", JsonOptions);
+        Assert.Empty(finance!.Memberships); Assert.Empty(finance.Invoices); Assert.Empty(finance.Payments); Assert.Equal(0m, finance.OpenBalance);
+        Assert.Empty(attendance!.Items); Assert.Equal(0m, attendance.AttendanceRate);
+        using var instructor = Client("Instructor", "instructor-user");
+        Assert.Equal(HttpStatusCode.Forbidden, (await instructor.GetAsync($"/api/students/{seed.StudentId}/finance-overview")).StatusCode);
+    }
+
     [Theory]
     [InlineData("Instructor", "/api/payments", HttpStatusCode.Forbidden)]
     [InlineData("Reception", "/api/reports", HttpStatusCode.Forbidden)]

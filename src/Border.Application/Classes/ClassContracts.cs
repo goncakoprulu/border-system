@@ -20,6 +20,7 @@ public sealed record StudioRoomUpsertRequest(string Name, string? Description, i
 public sealed record ClassEnrollmentResponse(Guid Id, Guid StudentId, string StudentName, string? Phone, StudentStatus StudentStatus, DateOnly StartDate, DateOnly? EndDate, EnrollmentStatus Status);
 public sealed record CreateEnrollmentRequest(Guid StudentId, DateOnly StartDate);
 public sealed record EndEnrollmentRequest(DateOnly? EndDate);
+public sealed record ChangeEnrollmentStatusRequest(EnrollmentStatus Status, DateOnly? EndDate = null);
 
 public sealed record ClassOperationResult<T>(T? Value, string? Error = null, bool IsConflict = false)
 {
@@ -41,6 +42,7 @@ public interface IClassService
     Task<bool?> DeleteScheduleAsync(Guid classId, Guid scheduleId, CancellationToken cancellationToken);
     Task<ClassOperationResult<ClassEnrollmentResponse>> EnrollStudentAsync(Guid classId, CreateEnrollmentRequest request, CancellationToken cancellationToken);
     Task<ClassOperationResult<ClassEnrollmentResponse>> EndEnrollmentAsync(Guid classId, Guid enrollmentId, EndEnrollmentRequest request, CancellationToken cancellationToken);
+    Task<ClassOperationResult<ClassEnrollmentResponse>> ChangeEnrollmentStatusAsync(Guid classId, Guid enrollmentId, ChangeEnrollmentStatusRequest request, CancellationToken cancellationToken);
     Task<IReadOnlyCollection<InstructorOptionResponse>> GetInstructorOptionsAsync(CancellationToken cancellationToken);
     Task<IReadOnlyCollection<InstructorResponse>> GetInstructorsAsync(CancellationToken cancellationToken);
     Task<IReadOnlyCollection<InstructorLoginOptionResponse>> GetInstructorLoginOptionsAsync(CancellationToken cancellationToken);

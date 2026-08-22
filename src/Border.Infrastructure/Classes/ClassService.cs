@@ -197,6 +197,39 @@ internal sealed class ClassService(BorderDbContext dbContext, IAuditWriter audit
         return ClassOperationResult<ClassEnrollmentResponse>.Success((await MapEnrollmentAsync(enrollment.Id, cancellationToken))!);
     }
 
+    public async Task<ClassOperationResult<ClassEnrollmentResponse>> ChangeEnrollmentStatusAsync(Guid classId, Guid enrollmentId, ChangeEnrollmentStatusRequest request, CancellationToken cancellationToken)
+    {
+        var enrollment = await dbContext.ClassEnrollments.SingleOrDefaultAsync(x => x.Id == enrollmentId && x.StudioClassId == classId, cancellationToken);
+        if (enrollment is null) return ClassOperationResult<ClassEnrollmentResponse>.NotFound();
+        if (enrollment.Status == request.Status) return ClassOperationResult<ClassEnrollmentResponse>.Success((await MapEnrollmentAsync(enrollment.Id, cancellationToken))!);
+        var old = new { enrollment.Status, enrollment.EndDate };
+        if (request.Status == EnrollmentStatus.Frozen)
+        {
+            if (enrollment.Status != EnrollmentStatus.Active) return ClassOperationResult<ClassEnrollmentResponse>.Conflict("Yalnızca aktif bir sınıf kaydı dondurulabilir.");
+            enrollment.Status = EnrollmentStatus.Frozen; enrollment.EndDate = null;
+        }
+        else if (request.Status == EnrollmentStatus.Active)
+        {
+            if (enrollment.Status != EnrollmentStatus.Frozen) return ClassOperationResult<ClassEnrollmentResponse>.Conflict("Yalnızca dondurulmuş bir sınıf kaydı yeniden aktifleştirilebilir.");
+            var studioClass = await dbContext.StudioClasses.AsNoTracking().SingleOrDefaultAsync(x => x.Id == classId && !x.IsDeleted, cancellationToken);
+            if (studioClass is null) return ClassOperationResult<ClassEnrollmentResponse>.NotFound();
+            if (await ActiveEnrollmentCountAsync(classId, cancellationToken) >= studioClass.Capacity) return ClassOperationResult<ClassEnrollmentResponse>.Conflict($"Sınıf kapasitesi dolu ({studioClass.Capacity}/{studioClass.Capacity}).");
+            if (await dbContext.ClassEnrollments.AnyAsync(x => x.Id != enrollmentId && x.StudioClassId == classId && x.StudentId == enrollment.StudentId && x.Status == EnrollmentStatus.Active, cancellationToken)) return ClassOperationResult<ClassEnrollmentResponse>.Conflict("Öğrencinin bu sınıfta başka bir aktif kaydı bulunuyor.");
+            enrollment.Status = EnrollmentStatus.Active; enrollment.EndDate = null;
+        }
+        else if (request.Status is EnrollmentStatus.Completed or EnrollmentStatus.Cancelled)
+        {
+            if (enrollment.Status is not (EnrollmentStatus.Active or EnrollmentStatus.Frozen)) return ClassOperationResult<ClassEnrollmentResponse>.Conflict("Bu sınıf kaydı artık sonlandırılamaz.");
+            var endDate = request.EndDate ?? Today();
+            if (endDate < enrollment.StartDate) return ClassOperationResult<ClassEnrollmentResponse>.Conflict("Bitiş tarihi kayıt başlangıcından önce olamaz.");
+            enrollment.Status = request.Status; enrollment.EndDate = endDate;
+        }
+        else return ClassOperationResult<ClassEnrollmentResponse>.Conflict("Geçersiz sınıf kayıt durumu seçildi.");
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await auditWriter.WriteAsync("EnrollmentStatusChanged", nameof(ClassEnrollment), enrollment.Id.ToString(), old, new { enrollment.Status, enrollment.EndDate }, cancellationToken);
+        return ClassOperationResult<ClassEnrollmentResponse>.Success((await MapEnrollmentAsync(enrollment.Id, cancellationToken))!);
+    }
+
     public async Task<IReadOnlyCollection<InstructorOptionResponse>> GetInstructorOptionsAsync(CancellationToken cancellationToken) =>
         await dbContext.Instructors.AsNoTracking().Where(x => !x.IsDeleted).OrderBy(x => x.LastName).ThenBy(x => x.FirstName)
             .Select(x => new InstructorOptionResponse(x.Id, x.FirstName + " " + x.LastName, x.UserId)).ToListAsync(cancellationToken);
