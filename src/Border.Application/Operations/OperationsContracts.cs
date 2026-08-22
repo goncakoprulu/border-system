@@ -3,7 +3,7 @@ using Border.Domain.Entities;
 namespace Border.Application.Operations;
 
 public sealed record ScheduleItemResponse(Guid ClassId, string ClassName, string InstructorName, Guid InstructorId, string RoomName, Guid RoomId, DayOfWeek DayOfWeek, TimeOnly StartTime, TimeOnly EndTime, string? Level);
-public sealed record SessionListItemResponse(Guid Id, Guid ClassId, string ClassName, string InstructorName, string RoomName, DateTime ScheduledStart, DateTime ScheduledEnd, int StudentCount, bool IsCompleted);
+public sealed record SessionListItemResponse(Guid Id, Guid ClassId, string ClassName, Guid InstructorId, string InstructorName, Guid RoomId, string RoomName, DateTime ScheduledStart, DateTime ScheduledEnd, int StudentCount, int RecordedCount, bool IsCompleted);
 public sealed record AttendanceStudentResponse(Guid StudentId, string StudentName, AttendanceStatus? Status, string? Notes);
 public sealed record AttendanceDetailResponse(SessionListItemResponse Session, IReadOnlyCollection<AttendanceStudentResponse> Students);
 public sealed record AttendanceEntryRequest(Guid StudentId, AttendanceStatus Status, string? Notes);
@@ -30,7 +30,7 @@ public sealed record UpdateUserRequest(string DisplayName, bool IsActive, IReadO
 public interface IOperationsService
 {
     Task<IReadOnlyCollection<ScheduleItemResponse>> GetScheduleAsync(Guid? roomId, Guid? instructorId, DayOfWeek? day, Guid? classId, CancellationToken ct);
-    Task<IReadOnlyCollection<SessionListItemResponse>> GetSessionsAsync(DateOnly date, string? userId, bool instructorOnly, CancellationToken ct);
+    Task<IReadOnlyCollection<SessionListItemResponse>> GetSessionsAsync(DateOnly date, Guid? instructorId, Guid? classId, Guid? roomId, string? userId, bool instructorOnly, CancellationToken ct);
     Task<AttendanceDetailResponse?> GetAttendanceAsync(Guid sessionId, string? userId, bool instructorOnly, CancellationToken ct);
     Task<AttendanceDetailResponse?> SaveAttendanceAsync(Guid sessionId, SaveAttendanceRequest request, string userId, bool instructorOnly, CancellationToken ct);
     Task<IReadOnlyCollection<MembershipListItemResponse>> GetMembershipsAsync(string? search, MembershipStatus? status, CancellationToken ct);

@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:schedule-days": "node scripts/test-schedule-days.mjs"
+    "test:schedule-days": "node scripts/test-schedule-days.mjs",
+    "test:actions": "node scripts/test-operational-actions.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",

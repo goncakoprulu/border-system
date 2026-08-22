@@ -140,7 +140,7 @@ public sealed class BorderDbContext(DbContextOptions<BorderDbContext> options)
         builder.Entity<LessonSession>(e =>
         {
             e.ToTable("LessonSessions", t => t.HasCheckConstraint("CK_LessonSessions_TimeRange", "\"ScheduledEnd\" > \"ScheduledStart\""));
-            e.HasIndex(x => new { x.StudioClassId, x.ScheduledStart });
+            e.HasIndex(x => new { x.StudioClassId, x.ScheduledStart }).IsUnique();
             e.HasIndex(x => new { x.InstructorId, x.ScheduledStart });
             e.HasOne(x => x.StudioClass).WithMany().HasForeignKey(x => x.StudioClassId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(x => x.Instructor).WithMany().HasForeignKey(x => x.InstructorId).OnDelete(DeleteBehavior.Restrict);

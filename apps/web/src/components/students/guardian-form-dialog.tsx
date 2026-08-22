@@ -40,6 +40,6 @@ export function GuardianFormDialog({ studentId, guardian, open, onOpenChange }: 
       <div className="space-y-2"><Label htmlFor="relationship">Yakınlık *</Label><Input id="relationship" placeholder="Anne, baba..." {...register("relationship")} />{errors.relationship && <p className="text-xs text-red-600">{errors.relationship.message}</p>}</div>
       <div className="space-y-2"><Label htmlFor="guardian-phone">Telefon</Label><Input id="guardian-phone" inputMode="tel" {...register("phone")} /></div>
       <div className="space-y-2 sm:col-span-2"><Label htmlFor="guardian-email">E-posta</Label><Input id="guardian-email" type="email" {...register("email")} />{errors.email && <p className="text-xs text-red-600">{errors.email.message}</p>}</div>
-    </form><DialogFooter><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Vazgeç</Button><Button form="guardian-form" disabled={mutation.isPending}>{mutation.isPending && <LoaderCircle className="animate-spin" />}Kaydet</Button></DialogFooter>
+    </form><DialogFooter><Button type="button" variant="outline" disabled={mutation.isPending} onClick={() => onOpenChange(false)}>Vazgeç</Button><Button type="submit" form="guardian-form" disabled={mutation.isPending} aria-busy={mutation.isPending}>{mutation.isPending && <LoaderCircle className="animate-spin" />}{mutation.isPending ? "Kaydediliyor..." : "Kaydet"}</Button></DialogFooter>
   </DialogContent></Dialog>;
 }

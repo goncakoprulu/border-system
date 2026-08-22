@@ -84,7 +84,7 @@ export function StudentFormDialog({ open, onOpenChange, student }: { open: boole
         {field("status", "Durum", <select id="status" className="h-9 w-full rounded-lg border bg-transparent px-3 text-sm" {...register("status")}>{studentStatuses.map((status) => <option key={status} value={status}>{studentStatusLabels[status]}</option>)}</select>)}
         <div className="space-y-2 sm:col-span-2"><Label htmlFor="notes">Notlar</Label><Textarea id="notes" rows={4} {...register("notes")} />{errors.notes && <p className="text-xs text-red-600">{errors.notes.message}</p>}</div>
       </form>
-      <DialogFooter><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Vazgeç</Button><Button form="student-form" disabled={mutation.isPending}>{mutation.isPending && <LoaderCircle className="animate-spin" />}{student ? "Değişiklikleri kaydet" : "Öğrenciyi oluştur"}</Button></DialogFooter>
+      <DialogFooter><Button type="button" variant="outline" disabled={mutation.isPending} onClick={() => onOpenChange(false)}>Vazgeç</Button><Button type="submit" form="student-form" disabled={mutation.isPending} aria-busy={mutation.isPending}>{mutation.isPending && <LoaderCircle className="animate-spin" />}{mutation.isPending ? "Kaydediliyor..." : student ? "Değişiklikleri kaydet" : "Öğrenciyi oluştur"}</Button></DialogFooter>
     </DialogContent>
   </Dialog>;
 }

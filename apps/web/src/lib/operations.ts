@@ -1,7 +1,7 @@
 import { apiMutation, apiQuery } from "@/lib/api";
 
 export type ScheduleItem = { classId:string; className:string; instructorName:string; instructorId:string; roomName:string; roomId:string; dayOfWeek:number; startTime:string; endTime:string; level:string|null };
-export type Session = { id:string; classId:string; className:string; instructorName:string; roomName:string; scheduledStart:string; scheduledEnd:string; studentCount:number; isCompleted:boolean };
+export type Session = { id:string; classId:string; className:string; instructorId:string; instructorName:string; roomId:string; roomName:string; scheduledStart:string; scheduledEnd:string; studentCount:number; recordedCount:number; isCompleted:boolean };
 export type AttendanceStatus = "Present"|"Absent"|"Excused"|"Late"|"MakeUp";
 export type AttendanceStudent = { studentId:string; studentName:string; status:AttendanceStatus|null; notes:string|null };
 export type AttendanceDetail = { session:Session; students:AttendanceStudent[] };
@@ -18,7 +18,7 @@ export type UserRecord = { id:string; displayName:string; email:string; roles:st
 export const operationKeys = { section:(name:string, suffix="") => ["operations",name,suffix] as const };
 export const operationsApi = {
   schedule:(params="") => apiQuery<ScheduleItem[]>(`/api/schedule${params ? `?${params}` : ""}`),
-  sessions:(date:string) => apiQuery<Session[]>(`/api/attendance/sessions?date=${date}`),
+  sessions:(params:string) => apiQuery<Session[]>(`/api/attendance/sessions?${params}`),
   attendance:(id:string) => apiQuery<AttendanceDetail>(`/api/attendance/sessions/${id}`),
   saveAttendance:(id:string, entries:{studentId:string;status:AttendanceStatus;notes:string|null}[]) => apiMutation<AttendanceDetail>(`/api/attendance/sessions/${id}`,"PUT",{entries}),
   memberships:(params="") => apiQuery<Membership[]>(`/api/memberships${params ? `?${params}` : ""}`),

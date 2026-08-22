@@ -39,6 +39,7 @@ export const classesApi = {
   rooms: () => apiQuery<StudioRoom[]>("/api/rooms"),
   createRoom: (input: RoomInput) => apiMutation<StudioRoom>("/api/rooms", "POST", input),
   updateRoom: (id: string, input: RoomInput) => apiMutation<StudioRoom>(`/api/rooms/${id}`, "PUT", input),
+  archiveRoom: (id: string) => apiMutation<void>(`/api/rooms/${id}`, "DELETE"),
 };
 
 export const displayTime = (value: string) => value.slice(0, 5);

@@ -23,6 +23,15 @@ public sealed class PersistenceModelTests
         Assert.True(index.IsUnique);
     }
 
+    [Fact]
+    public void LessonSession_HasUniqueClassAndStartConstraint()
+    {
+        using var context = CreateContext();
+        var entity = context.Model.FindEntityType(typeof(LessonSession))!;
+        var index = entity.GetIndexes().Single(x => x.Properties.Select(p => p.Name).SequenceEqual([nameof(LessonSession.StudioClassId), nameof(LessonSession.ScheduledStart)]));
+        Assert.True(index.IsUnique);
+    }
+
     [Theory]
     [InlineData(typeof(MembershipPlan), nameof(MembershipPlan.DefaultPrice))]
     [InlineData(typeof(MembershipPriceHistory), nameof(MembershipPriceHistory.Price))]

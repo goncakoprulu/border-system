@@ -72,6 +72,26 @@ public sealed class ClassApiTests(StudentApiFactory factory) : IClassFixture<Stu
     }
 
     [Fact]
+    public async Task StudioRoom_CreateUpdateValidateAndArchive_WorksEndToEnd()
+    {
+        await factory.ResetAsync(); using var client = Client("Management");
+        var create = await MutationAsync(client, HttpMethod.Post, "/api/rooms", new StudioRoomUpsertRequest("Güney", null, 30));
+        create.EnsureSuccessStatusCode(); var room = await create.Content.ReadFromJsonAsync<StudioRoomResponse>(JsonOptions); Assert.Equal(30, room!.Capacity);
+
+        var update = await MutationAsync(client, HttpMethod.Put, $"/api/rooms/{room.Id}", new StudioRoomUpsertRequest("Güney", null, 18));
+        update.EnsureSuccessStatusCode(); Assert.Equal(18, (await update.Content.ReadFromJsonAsync<StudioRoomResponse>(JsonOptions))!.Capacity);
+        var listed = await client.GetFromJsonAsync<IReadOnlyCollection<StudioRoomResponse>>("/api/rooms", JsonOptions); Assert.Equal(18, Assert.Single(listed!).Capacity);
+
+        var invalidName = await MutationAsync(client, HttpMethod.Put, $"/api/rooms/{room.Id}", new StudioRoomUpsertRequest(" ", null, 18));
+        Assert.Equal(HttpStatusCode.BadRequest, invalidName.StatusCode); Assert.Contains("Name", await invalidName.Content.ReadAsStringAsync());
+        var invalidCapacity = await MutationAsync(client, HttpMethod.Put, $"/api/rooms/{room.Id}", new StudioRoomUpsertRequest("Güney", null, 0));
+        Assert.Equal(HttpStatusCode.BadRequest, invalidCapacity.StatusCode); Assert.Contains("Capacity", await invalidCapacity.Content.ReadAsStringAsync());
+
+        var archive = await MutationAsync(client, HttpMethod.Delete, $"/api/rooms/{room.Id}", new { }); Assert.Equal(HttpStatusCode.NoContent, archive.StatusCode);
+        Assert.Empty((await client.GetFromJsonAsync<IReadOnlyCollection<StudioRoomResponse>>("/api/rooms", JsonOptions))!);
+    }
+
+    [Fact]
     public async Task Enrollment_EnforcesDuplicateAndCapacity_ThenPreservesHistoryInStudent360()
     {
         await factory.ResetAsync();

@@ -19,6 +19,7 @@ function statusMessage(status: number, serverMessage?: string) {
   if (status === 401) return "Oturumunuz sona erdi. Lütfen tekrar giriş yapın.";
   if (status === 403) return "Bu işlemi yapmaya yetkiniz yok.";
   if (status === 404) return serverMessage || "İstenen kayıt bulunamadı.";
+  if (status === 409) return serverMessage || "İşlem mevcut bir kayıtla çakışıyor. Lütfen bilgileri kontrol edin.";
   if (status >= 500) return "Sunucuda beklenmeyen bir hata oluştu. Lütfen tekrar deneyin.";
   return serverMessage || "İşlem tamamlanamadı. Lütfen bilgileri kontrol edin.";
 }

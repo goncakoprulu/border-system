@@ -19,7 +19,8 @@ public sealed class OperationsController(IOperationsService operations, UserMana
 
     [HttpGet("attendance/sessions")]
     [Authorize(Policy = Policies.OperationsAccess)]
-    public async Task<ActionResult<IReadOnlyCollection<SessionListItemResponse>>> Sessions([FromQuery] DateOnly? date, CancellationToken ct) => Ok(await operations.GetSessionsAsync(date ?? Today(), UserId(), InstructorOnly(), ct));
+    public async Task<ActionResult<IReadOnlyCollection<SessionListItemResponse>>> Sessions([FromQuery] DateOnly? date, [FromQuery] Guid? instructorId, [FromQuery] Guid? classId, [FromQuery] Guid? roomId, CancellationToken ct) =>
+        Ok(await operations.GetSessionsAsync(date ?? Today(), instructorId, classId, roomId, UserId(), InstructorOnly(), ct));
 
     [HttpGet("attendance/sessions/{id:guid}")]
     [Authorize(Policy = Policies.OperationsAccess)]

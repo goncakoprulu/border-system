@@ -7,7 +7,10 @@ namespace Border.Infrastructure.Operations;
 
 internal sealed class OperationsService(BorderDbContext db) : IOperationsService
 {
-    private static DateTime IstanbulStart(DateOnly date) => DateTime.SpecifyKind(date.ToDateTime(TimeOnly.MinValue), DateTimeKind.Unspecified).AddHours(-3);
+    private static DateTime IstanbulUtc(DateOnly date, TimeOnly time) =>
+        DateTime.SpecifyKind(date.ToDateTime(time).AddHours(-3), DateTimeKind.Utc);
+
+    private static DateTime IstanbulStart(DateOnly date) => IstanbulUtc(date, TimeOnly.MinValue);
 
     public async Task<IReadOnlyCollection<ScheduleItemResponse>> GetScheduleAsync(Guid? roomId, Guid? instructorId, DayOfWeek? day, Guid? classId, CancellationToken ct)
     {
@@ -20,20 +23,25 @@ internal sealed class OperationsService(BorderDbContext db) : IOperationsService
             .Select(x => new ScheduleItemResponse(x.StudioClassId, x.StudioClass.Name, x.StudioClass.Instructor.FirstName + " " + x.StudioClass.Instructor.LastName, x.StudioClass.InstructorId, x.StudioClass.StudioRoom.Name, x.StudioClass.StudioRoomId, x.DayOfWeek, x.StartTime, x.EndTime, x.StudioClass.Level)).ToListAsync(ct);
     }
 
-    public async Task<IReadOnlyCollection<SessionListItemResponse>> GetSessionsAsync(DateOnly date, string? userId, bool instructorOnly, CancellationToken ct)
+    public async Task<IReadOnlyCollection<SessionListItemResponse>> GetSessionsAsync(DateOnly date, Guid? instructorId, Guid? classId, Guid? roomId, string? userId, bool instructorOnly, CancellationToken ct)
     {
+        await EnsureSessionsAsync(date, ct);
         var start = IstanbulStart(date); var end = start.AddDays(1);
         var query = db.LessonSessions.AsNoTracking().Where(x => x.ScheduledStart >= start && x.ScheduledStart < end && x.Status != LessonSessionStatus.Cancelled);
         if (instructorOnly) query = query.Where(x => x.Instructor.UserId == userId);
-        return await query.OrderBy(x => x.ScheduledStart).Select(x => new SessionListItemResponse(x.Id, x.StudioClassId, x.StudioClass.Name, x.Instructor.FirstName + " " + x.Instructor.LastName, x.StudioRoom.Name, x.ScheduledStart, x.ScheduledEnd,
+        if (instructorId.HasValue) query = query.Where(x => x.InstructorId == instructorId);
+        if (classId.HasValue) query = query.Where(x => x.StudioClassId == classId);
+        if (roomId.HasValue) query = query.Where(x => x.StudioRoomId == roomId);
+        return await query.OrderBy(x => x.ScheduledStart).Select(x => new SessionListItemResponse(x.Id, x.StudioClassId, x.StudioClass.Name, x.InstructorId, x.Instructor.FirstName + " " + x.Instructor.LastName, x.StudioRoomId, x.StudioRoom.Name, x.ScheduledStart, x.ScheduledEnd,
             db.ClassEnrollments.Count(e => e.StudioClassId == x.StudioClassId && e.Status == EnrollmentStatus.Active && e.StartDate <= date && (e.EndDate == null || e.EndDate >= date)),
+            db.Attendances.Count(a => a.LessonSessionId == x.Id),
             x.Status == LessonSessionStatus.Completed || db.Attendances.Any(a => a.LessonSessionId == x.Id))).ToListAsync(ct);
     }
 
     public async Task<AttendanceDetailResponse?> GetAttendanceAsync(Guid sessionId, string? userId, bool instructorOnly, CancellationToken ct)
     {
         var session = await db.LessonSessions.AsNoTracking().Where(x => x.Id == sessionId && x.Status != LessonSessionStatus.Cancelled && (!instructorOnly || x.Instructor.UserId == userId))
-            .Select(x => new SessionListItemResponse(x.Id, x.StudioClassId, x.StudioClass.Name, x.Instructor.FirstName + " " + x.Instructor.LastName, x.StudioRoom.Name, x.ScheduledStart, x.ScheduledEnd, 0, x.Status == LessonSessionStatus.Completed || db.Attendances.Any(a => a.LessonSessionId == x.Id))).SingleOrDefaultAsync(ct);
+            .Select(x => new SessionListItemResponse(x.Id, x.StudioClassId, x.StudioClass.Name, x.InstructorId, x.Instructor.FirstName + " " + x.Instructor.LastName, x.StudioRoomId, x.StudioRoom.Name, x.ScheduledStart, x.ScheduledEnd, 0, db.Attendances.Count(a => a.LessonSessionId == x.Id), x.Status == LessonSessionStatus.Completed || db.Attendances.Any(a => a.LessonSessionId == x.Id))).SingleOrDefaultAsync(ct);
         if (session is null) return null;
         var date = DateOnly.FromDateTime(session.ScheduledStart.AddHours(3));
         var students = await db.ClassEnrollments.AsNoTracking().Where(x => x.StudioClassId == session.ClassId && x.Status == EnrollmentStatus.Active && x.StartDate <= date && (x.EndDate == null || x.EndDate >= date) && !x.Student.IsDeleted)
@@ -47,10 +55,38 @@ internal sealed class OperationsService(BorderDbContext db) : IOperationsService
         var detail = await GetAttendanceAsync(sessionId, userId, instructorOnly, ct); if (detail is null) return null;
         var allowed = detail.Students.Select(x => x.StudentId).ToHashSet();
         if (request.Entries.Count != request.Entries.Select(x => x.StudentId).Distinct().Count() || request.Entries.Any(x => !allowed.Contains(x.StudentId))) throw new InvalidOperationException("Yoklama listesinde sınıfa kayıtlı olmayan veya yinelenen öğrenci var.");
+        if (request.Entries.Count != allowed.Count) throw new InvalidOperationException("Yoklamayı kaydetmeden önce tüm öğrencilerin durumunu seçin.");
+        if (request.Entries.Any(x => !Enum.IsDefined(x.Status))) throw new InvalidOperationException("Geçersiz yoklama durumu seçildi.");
+        if (request.Entries.Any(x => x.Notes?.Trim().Length > 1000)) throw new InvalidOperationException("Yoklama notu en fazla 1000 karakter olabilir.");
         var existing = await db.Attendances.Where(x => x.LessonSessionId == sessionId).ToDictionaryAsync(x => x.StudentId, ct);
         foreach (var item in request.Entries) { if (existing.TryGetValue(item.StudentId, out var row)) { row.Status = item.Status; row.Notes = Clean(item.Notes); row.UpdatedAt = DateTime.UtcNow; row.RecordedByUserId = userId; } else db.Attendances.Add(new Attendance { LessonSessionId = sessionId, StudentId = item.StudentId, Status = item.Status, Notes = Clean(item.Notes), RecordedByUserId = userId }); }
         var session = await db.LessonSessions.SingleAsync(x => x.Id == sessionId, ct); session.Status = LessonSessionStatus.Completed;
         await db.SaveChangesAsync(ct); return await GetAttendanceAsync(sessionId, userId, instructorOnly, ct);
+    }
+
+    private async Task EnsureSessionsAsync(DateOnly date, CancellationToken ct)
+    {
+        var schedules = await db.ClassSchedules.AsNoTracking()
+            .Where(x => x.DayOfWeek == date.DayOfWeek && !x.StudioClass.IsDeleted && x.StudioClass.Status == StudioClassStatus.Active && x.StudioClass.StartDate <= date && (x.StudioClass.EndDate == null || x.StudioClass.EndDate >= date))
+            .Select(x => new { x.StudioClassId, x.StudioClass.InstructorId, x.StudioClass.StudioRoomId, x.StartTime, x.EndTime })
+            .ToListAsync(ct);
+        if (schedules.Count == 0) return;
+
+        var start = IstanbulStart(date); var end = start.AddDays(1);
+        var existing = await db.LessonSessions.AsNoTracking().Where(x => x.ScheduledStart >= start && x.ScheduledStart < end)
+            .Select(x => new { x.StudioClassId, x.ScheduledStart }).ToListAsync(ct);
+        var keys = existing.Select(x => (x.StudioClassId, x.ScheduledStart)).ToHashSet();
+        var missing = schedules.Select(x => new LessonSession
+        {
+            StudioClassId = x.StudioClassId,
+            InstructorId = x.InstructorId,
+            StudioRoomId = x.StudioRoomId,
+            ScheduledStart = IstanbulUtc(date, x.StartTime),
+            ScheduledEnd = IstanbulUtc(date, x.EndTime),
+        }).Where(x => keys.Add((x.StudioClassId, x.ScheduledStart))).ToList();
+        if (missing.Count == 0) return;
+        db.LessonSessions.AddRange(missing);
+        await db.SaveChangesAsync(ct);
     }
 
     public async Task<IReadOnlyCollection<MembershipListItemResponse>> GetMembershipsAsync(string? search, MembershipStatus? status, CancellationToken ct)
