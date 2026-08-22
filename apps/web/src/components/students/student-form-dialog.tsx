@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { ApiError } from "@/lib/api";
+import { applyApiFieldErrors, formErrorMessage } from "@/lib/form-errors";
 import { StudentDetail, StudentInput, studentKeys, studentStatuses, studentStatusLabels, studentsApi } from "@/lib/students";
 import { studentDetailHref } from "@/lib/routes";
 
@@ -62,12 +62,9 @@ export function StudentFormDialog({ open, onOpenChange, student }: { open: boole
       }
     },
     onError: (error) => {
-      if (error instanceof ApiError && error.errors) {
-        for (const [key, messages] of Object.entries(error.errors)) {
-          const field = `${key[0].toLowerCase()}${key.slice(1)}` as keyof FormValues;
-          setError(field, { message: messages[0] });
-        }
-      } else toast.error(error.message);
+      const fields: (keyof FormValues)[] = ["firstName", "lastName", "phone", "email", "birthDate", "gender", "notes", "status", "registrationDate"];
+      applyApiFieldErrors(error, (field, message) => setError(field, { type: "server", message }), fields);
+      toast.error(formErrorMessage(error, "Öğrenci kaydedilirken beklenmeyen bir hata oluştu."));
     },
   });
 

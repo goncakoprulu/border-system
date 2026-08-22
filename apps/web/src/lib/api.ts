@@ -13,17 +13,39 @@ export class ApiError extends Error {
   }
 }
 
+const requestTimeoutMs = 20_000;
+
+function statusMessage(status: number, serverMessage?: string) {
+  if (status === 401) return "Oturumunuz sona erdi. Lütfen tekrar giriş yapın.";
+  if (status === 403) return "Bu işlemi yapmaya yetkiniz yok.";
+  if (status === 404) return serverMessage || "İstenen kayıt bulunamadı.";
+  if (status >= 500) return "Sunucuda beklenmeyen bir hata oluştu. Lütfen tekrar deneyin.";
+  return serverMessage || "İşlem tamamlanamadı. Lütfen bilgileri kontrol edin.";
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${siteConfig.apiUrl}${path}`, {
-    ...init,
-    credentials: "include",
-    headers: { "Content-Type": "application/json", ...init?.headers },
-  });
-  if (!response.ok) {
-    const body = await response.json().catch(() => null);
-    throw new ApiError(response.status, body?.detail ?? body?.title ?? "İşlem tamamlanamadı.", body?.errors);
+  const controller = new AbortController();
+  const timeout = globalThis.setTimeout(() => controller.abort(), requestTimeoutMs);
+  try {
+    const response = await fetch(`${siteConfig.apiUrl}${path}`, {
+      ...init,
+      signal: controller.signal,
+      credentials: "include",
+      headers: { "Content-Type": "application/json", ...init?.headers },
+    });
+    if (!response.ok) {
+      const body = await response.json().catch(() => null);
+      const serverMessage = typeof body?.detail === "string" ? body.detail : typeof body?.title === "string" ? body.title : undefined;
+      throw new ApiError(response.status, statusMessage(response.status, serverMessage), body?.errors);
+    }
+    return response.status === 204 ? (undefined as T) : response.json();
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    if (error instanceof DOMException && error.name === "AbortError") throw new ApiError(0, "İstek zaman aşımına uğradı. Lütfen tekrar deneyin.");
+    throw new ApiError(0, "Sunucuya ulaşılamadı. Lütfen tekrar deneyin.");
+  } finally {
+    globalThis.clearTimeout(timeout);
   }
-  return response.status === 204 ? (undefined as T) : response.json();
 }
 
 export async function apiQuery<T>(path: string) {

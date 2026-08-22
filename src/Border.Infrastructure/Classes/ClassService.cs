@@ -61,7 +61,7 @@ internal sealed class ClassService(BorderDbContext dbContext, IAuditWriter audit
 
     public async Task<ClassOperationResult<ClassDetailResponse>> CreateClassAsync(StudioClassUpsertRequest request, CancellationToken cancellationToken)
     {
-        var relatedError = await ValidateRelationsAsync(request.InstructorId, request.StudioRoomId, cancellationToken);
+        var relatedError = await ValidateRelationsAsync(request.InstructorId, request.StudioRoomId, request.Capacity, cancellationToken);
         if (relatedError is not null) return ClassOperationResult<ClassDetailResponse>.Conflict(relatedError);
         var conflict = await FindScheduleConflictAsync(request.InstructorId, request.StudioRoomId, request.Status, request.Schedules, null, cancellationToken);
         if (conflict is not null) return ClassOperationResult<ClassDetailResponse>.Conflict(conflict);
@@ -82,7 +82,7 @@ internal sealed class ClassService(BorderDbContext dbContext, IAuditWriter audit
     {
         var studioClass = await dbContext.StudioClasses.SingleOrDefaultAsync(x => x.Id == id && !x.IsDeleted, cancellationToken);
         if (studioClass is null) return ClassOperationResult<ClassDetailResponse>.NotFound();
-        var relatedError = await ValidateRelationsAsync(request.InstructorId, request.StudioRoomId, cancellationToken);
+        var relatedError = await ValidateRelationsAsync(request.InstructorId, request.StudioRoomId, request.Capacity, cancellationToken);
         if (relatedError is not null) return ClassOperationResult<ClassDetailResponse>.Conflict(relatedError);
         var conflict = await FindScheduleConflictAsync(request.InstructorId, request.StudioRoomId, request.Status, request.Schedules, id, cancellationToken);
         if (conflict is not null) return ClassOperationResult<ClassDetailResponse>.Conflict(conflict);
@@ -306,10 +306,12 @@ internal sealed class ClassService(BorderDbContext dbContext, IAuditWriter audit
         return await dbContext.ClassEnrollments.CountAsync(x => x.StudioClassId == classId && x.Status == EnrollmentStatus.Active && x.StartDate <= today && (x.EndDate == null || x.EndDate >= today), cancellationToken);
     }
 
-    private async Task<string?> ValidateRelationsAsync(Guid instructorId, Guid roomId, CancellationToken cancellationToken)
+    private async Task<string?> ValidateRelationsAsync(Guid instructorId, Guid roomId, int capacity, CancellationToken cancellationToken)
     {
         if (!await dbContext.Instructors.AnyAsync(x => x.Id == instructorId && !x.IsDeleted, cancellationToken)) return "Seçilen eğitmen bulunamadı veya aktif değil.";
-        if (!await dbContext.StudioRooms.AnyAsync(x => x.Id == roomId && !x.IsDeleted && x.IsActive, cancellationToken)) return "Seçilen stüdyo bulunamadı veya aktif değil.";
+        var room = await dbContext.StudioRooms.AsNoTracking().Where(x => x.Id == roomId && !x.IsDeleted && x.IsActive).Select(x => new { x.Name, x.Capacity }).SingleOrDefaultAsync(cancellationToken);
+        if (room is null) return "Seçilen stüdyo bulunamadı veya aktif değil.";
+        if (room.Capacity.HasValue && capacity > room.Capacity.Value) return $"Sınıf kapasitesi {room.Name} salon kapasitesinden ({room.Capacity.Value}) büyük olamaz.";
         return null;
     }
 

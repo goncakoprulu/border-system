@@ -51,6 +51,7 @@ public static class ClassValidation
     private static void ValidateSchedules(IReadOnlyCollection<ClassScheduleRequest> schedules, Dictionary<string, string[]> errors)
     {
         if (schedules.Count > 14) errors[nameof(StudioClassUpsertRequest.Schedules)] = ["Bir sınıf için en fazla 14 haftalık program satırı eklenebilir."];
+        if (schedules.Any(x => !Enum.IsDefined(x.DayOfWeek))) errors[nameof(StudioClassUpsertRequest.Schedules)] = ["Tüm program satırlarında geçerli bir gün seçilmelidir."];
         if (schedules.Any(x => x.EndTime <= x.StartTime)) errors[nameof(StudioClassUpsertRequest.Schedules)] = ["Tüm program satırlarında bitiş saati başlangıçtan sonra olmalıdır."];
         if (schedules.GroupBy(x => new { x.DayOfWeek, x.StartTime, x.EndTime }).Any(x => x.Count() > 1)) errors[nameof(StudioClassUpsertRequest.Schedules)] = ["Aynı program satırı birden fazla kez eklenemez."];
     }

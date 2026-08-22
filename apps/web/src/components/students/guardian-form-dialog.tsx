@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { formErrorMessage } from "@/lib/form-errors";
 import { Guardian, GuardianInput, studentKeys, studentsApi } from "@/lib/students";
 
 const schema = z.object({
@@ -30,7 +31,7 @@ export function GuardianFormDialog({ studentId, guardian, open, onOpenChange }: 
       return guardian ? studentsApi.updateGuardian(studentId, guardian.id, input) : studentsApi.addGuardian(studentId, input);
     },
     onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: studentKeys.detail(studentId) }); onOpenChange(false); toast.success(guardian ? "Veli bilgileri güncellendi." : "Veli eklendi."); },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toast.error(formErrorMessage(error, "Veli bilgileri kaydedilirken beklenmeyen bir hata oluştu.")),
   });
   return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="sm:max-w-lg"><DialogHeader><DialogTitle>{guardian ? "Veliyi düzenle" : "Veli ekle"}</DialogTitle><DialogDescription>Öğrencinin iletişim kurulabilecek veli veya yakın bilgileri.</DialogDescription></DialogHeader>
     <form id="guardian-form" className="grid gap-4 py-2 sm:grid-cols-2" onSubmit={handleSubmit((values) => mutation.mutate(values))}>

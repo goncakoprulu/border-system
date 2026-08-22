@@ -1,12 +1,15 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Reflection;
 using System.Text.Json;
 using Border.Application.Classes;
 using Border.Application.Students;
 using Border.Domain.Entities;
 using Border.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Border.Tests;
 
@@ -104,6 +107,83 @@ public sealed class ClassApiTests(StudentApiFactory factory) : IClassFixture<Stu
         Assert.Equal(HttpStatusCode.Forbidden, (await reception.GetAsync("/api/classes?includeArchived=true")).StatusCode);
     }
 
+    [Fact]
+    public async Task ClassUpdate_ReplacesMultipleSchedulesAtomically()
+    {
+        await factory.ResetAsync();
+        var seed = await SeedAsync();
+        using var client = Client("Reception");
+        var request = new StudioClassUpsertRequest("Bale Güncellendi", null, seed.InstructorOneId, seed.RoomOneId, 12, "Orta", null, StudioClassStatus.Active, new(2026, 1, 1), null,
+            [new(DayOfWeek.Tuesday, new(18, 0), new(19, 0)), new(DayOfWeek.Thursday, new(20, 15), new(21, 30))]);
+
+        var response = await MutationAsync(client, HttpMethod.Put, $"/api/classes/{seed.FirstClassId}", request);
+        response.EnsureSuccessStatusCode();
+        var updated = await response.Content.ReadFromJsonAsync<ClassDetailResponse>(JsonOptions);
+        Assert.Equal("Bale Güncellendi", updated!.Name);
+        Assert.Equal(2, updated.Schedules.Count);
+        Assert.DoesNotContain(updated.Schedules, x => x.DayOfWeek == DayOfWeek.Monday);
+    }
+
+    [Fact]
+    public async Task ClassUpdate_ReturnsFieldValidationAndRoomCapacityErrors()
+    {
+        await factory.ResetAsync();
+        var seed = await SeedAsync();
+        using var client = Client("Management");
+        var invalid = new StudioClassUpsertRequest(" ", null, Guid.Empty, Guid.Empty, 0, null, null, StudioClassStatus.Active, default, new(2025, 1, 1),
+            [new(DayOfWeek.Tuesday, new(12, 0), new(11, 0))]);
+        var invalidResponse = await MutationAsync(client, HttpMethod.Put, $"/api/classes/{seed.FirstClassId}", invalid);
+        Assert.Equal(HttpStatusCode.BadRequest, invalidResponse.StatusCode);
+        var invalidBody = await invalidResponse.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.True(invalidBody.GetProperty("errors").TryGetProperty("Name", out _));
+        Assert.True(invalidBody.GetProperty("errors").TryGetProperty("Schedules", out _));
+
+        var duplicateSchedule = Request(seed.InstructorOneId, seed.RoomOneId, new(DayOfWeek.Tuesday, new(12, 0), new(13, 0))) with
+        {
+            Schedules = [new(DayOfWeek.Tuesday, new(12, 0), new(13, 0)), new(DayOfWeek.Tuesday, new(12, 0), new(13, 0))]
+        };
+        var duplicateResponse = await MutationAsync(client, HttpMethod.Put, $"/api/classes/{seed.FirstClassId}", duplicateSchedule);
+        Assert.Equal(HttpStatusCode.BadRequest, duplicateResponse.StatusCode);
+
+        var capacityRequest = Request(seed.InstructorOneId, seed.RoomOneId, new(DayOfWeek.Tuesday, new(12, 0), new(13, 0))) with { Capacity = 21 };
+        var capacityResponse = await MutationAsync(client, HttpMethod.Put, $"/api/classes/{seed.FirstClassId}", capacityRequest);
+        Assert.Equal(HttpStatusCode.Conflict, capacityResponse.StatusCode);
+        Assert.Contains("salon kapasitesinden", await capacityResponse.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task ClassUpdate_DetectsRoomAndInstructorConflicts_AndEnforcesRole()
+    {
+        await factory.ResetAsync();
+        var seed = await SeedAsync();
+        using var management = Client("Management");
+        var roomConflict = Request(seed.InstructorOneId, seed.RoomTwoId, new(DayOfWeek.Wednesday, new(10, 30), new(11, 30)));
+        Assert.Equal(HttpStatusCode.Conflict, (await MutationAsync(management, HttpMethod.Put, $"/api/classes/{seed.FirstClassId}", roomConflict)).StatusCode);
+        var instructorConflict = Request(seed.InstructorTwoId, seed.RoomOneId, new(DayOfWeek.Wednesday, new(10, 30), new(11, 30)));
+        Assert.Equal(HttpStatusCode.Conflict, (await MutationAsync(management, HttpMethod.Put, $"/api/classes/{seed.FirstClassId}", instructorConflict)).StatusCode);
+
+        using var instructor = Client("Instructor", "instructor-one-user");
+        Assert.Equal(HttpStatusCode.Forbidden, (await MutationAsync(instructor, HttpMethod.Put, $"/api/classes/{seed.FirstClassId}", roomConflict)).StatusCode);
+    }
+
+    [Fact]
+    public async Task ClassUpdate_UnexpectedServiceFailure_Returns500WithoutExceptionText()
+    {
+        await factory.ResetAsync();
+        using var application = factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+        {
+            services.RemoveAll<IClassService>();
+            services.AddSingleton(DispatchProxy.Create<IClassService, ThrowingClassServiceProxy>());
+        }));
+        using var client = application.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = true });
+        client.DefaultRequestHeaders.Add("X-Test-Role", "Management");
+        var request = Request(Guid.NewGuid(), Guid.NewGuid(), new(DayOfWeek.Tuesday, new(12, 0), new(13, 0)));
+
+        var response = await MutationAsync(client, HttpMethod.Put, $"/api/classes/{Guid.NewGuid()}", request);
+        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.DoesNotContain("database-password", await response.Content.ReadAsStringAsync(), StringComparison.OrdinalIgnoreCase);
+    }
+
     private async Task<Seed> SeedAsync(int capacity = 10)
     {
         await using var scope = factory.Services.CreateAsyncScope();
@@ -121,7 +201,7 @@ public sealed class ClassApiTests(StudentApiFactory factory) : IClassFixture<Stu
             new ClassSchedule { StudioClass = first, DayOfWeek = DayOfWeek.Monday, StartTime = new(10, 0), EndTime = new(11, 0) },
             new ClassSchedule { StudioClass = second, DayOfWeek = DayOfWeek.Wednesday, StartTime = new(10, 0), EndTime = new(11, 0) });
         await db.SaveChangesAsync();
-        return new(first.Id, second.Id, instructorOne.Id, roomTwo.Id, studentOne.Id, studentTwo.Id);
+        return new(first.Id, second.Id, instructorOne.Id, instructorTwo.Id, roomOne.Id, roomTwo.Id, studentOne.Id, studentTwo.Id);
     }
 
     private HttpClient Client(string role, string? userId = null)
@@ -144,5 +224,11 @@ public sealed class ClassApiTests(StudentApiFactory factory) : IClassFixture<Stu
         return await client.SendAsync(request);
     }
 
-    private sealed record Seed(Guid FirstClassId, Guid SecondClassId, Guid InstructorOneId, Guid RoomTwoId, Guid StudentOneId, Guid StudentTwoId);
+    private sealed record Seed(Guid FirstClassId, Guid SecondClassId, Guid InstructorOneId, Guid InstructorTwoId, Guid RoomOneId, Guid RoomTwoId, Guid StudentOneId, Guid StudentTwoId);
+
+    public class ThrowingClassServiceProxy : DispatchProxy
+    {
+        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args) =>
+            throw new InvalidOperationException("database-password must never reach the client");
+    }
 }
