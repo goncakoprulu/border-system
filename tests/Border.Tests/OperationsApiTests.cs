@@ -20,6 +20,9 @@ public sealed class OperationsApiTests(StudentApiFactory factory) : IClassFixtur
         await factory.ResetAsync(); var seed = await SeedAsync(); using var client = Client("Reception");
         var items = await client.GetFromJsonAsync<IReadOnlyCollection<ScheduleItemResponse>>("/api/schedule?day=Monday", JsonOptions);
         var item = Assert.Single(items!); Assert.Equal(seed.ClassId, item.ClassId); Assert.Equal("Kuzey", item.RoomName); Assert.Equal(new TimeOnly(10, 0), item.StartTime);
+        var raw = await client.GetFromJsonAsync<JsonElement>("/api/schedule?day=1");
+        Assert.Equal(JsonValueKind.Number, raw[0].GetProperty("dayOfWeek").ValueKind);
+        Assert.Equal(1, raw[0].GetProperty("dayOfWeek").GetInt32());
     }
 
     [Fact]

@@ -16,6 +16,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { applyApiFieldErrors, formErrorMessage } from "@/lib/form-errors";
 import { ClassDetail, ClassInput, classesApi, classKeys, classStatuses, classStatusLabels, dayLabels } from "@/lib/classes";
 import { classDetailHref } from "@/lib/routes";
+import { normalizeScheduleDay } from "@/lib/schedule-days";
 
 const scheduleSchema = z.object({
   dayOfWeek: z.number({ error: "Gün seçin." }).int().min(0, "Gün seçin.").max(6, "Gün seçin."),
@@ -57,7 +58,7 @@ const defaults = (item?: ClassDetail): ClassFormValues => ({
   name: item?.name ?? "", description: item?.description ?? "", instructorId: item?.instructorId ?? "", studioRoomId: item?.studioRoomId ?? "",
   capacity: item?.capacity ?? 12, level: item?.level ?? "", ageGroup: item?.ageGroup ?? "", status: item?.status ?? "Planned",
   startDate: item?.startDate ?? today(), endDate: item?.endDate ?? "",
-  schedules: item?.schedules.map((schedule) => ({ dayOfWeek: schedule.dayOfWeek, startTime: schedule.startTime.slice(0, 5), endTime: schedule.endTime.slice(0, 5) })) ?? [],
+  schedules: item?.schedules.map((schedule) => ({ dayOfWeek: normalizeScheduleDay(schedule.dayOfWeek) ?? -1, startTime: schedule.startTime.slice(0, 5), endTime: schedule.endTime.slice(0, 5) })) ?? [],
 });
 
 export function ClassFormDialog({ open, onOpenChange, item }: { open: boolean; onOpenChange: (open: boolean) => void; item?: ClassDetail }) {

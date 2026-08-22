@@ -1,10 +1,11 @@
 import { apiMutation, apiQuery } from "@/lib/api";
+import { scheduleDayLabels, scheduleDayTimeText } from "@/lib/schedule-days";
 
 export const classStatuses = ["Planned", "Active", "Paused", "Completed", "Cancelled"] as const;
 export type ClassStatus = (typeof classStatuses)[number];
 export const classStatusLabels: Record<ClassStatus, string> = { Planned: "Planlandı", Active: "Aktif", Paused: "Duraklatıldı", Completed: "Tamamlandı", Cancelled: "İptal" };
 export const enrollmentStatusLabels = { Active: "Aktif", Frozen: "Donduruldu", Completed: "Tamamlandı", Cancelled: "İptal" } as const;
-export const dayLabels = ["Pazar", "Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi"] as const;
+export const dayLabels = scheduleDayLabels;
 
 export type ClassSchedule = { id: string; dayOfWeek: number; startTime: string; endTime: string };
 export type ClassListItem = { id: string; name: string; instructorName: string; roomName: string; capacity: number; activeStudentCount: number; status: ClassStatus; startDate: string; isArchived: boolean; schedules: ClassSchedule[] };
@@ -41,4 +42,4 @@ export const classesApi = {
 };
 
 export const displayTime = (value: string) => value.slice(0, 5);
-export const scheduleText = (schedules: ClassSchedule[]) => schedules.length ? schedules.map((item) => `${dayLabels[item.dayOfWeek]} ${displayTime(item.startTime)}–${displayTime(item.endTime)}`).join(", ") : "Program eklenmedi";
+export const scheduleText = (schedules: ClassSchedule[]) => schedules.length ? schedules.map((item) => scheduleDayTimeText(item.dayOfWeek, item.startTime, item.endTime)).join(", ") : "Program eklenmedi";

@@ -73,7 +73,11 @@ if (reverseProxyEnabled)
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddScoped<Border.Api.Security.ValidateAntiforgeryFilter>();
 builder.Services.AddControllers(options => options.Filters.Add<Border.Api.Security.ValidateAntiforgeryFilter>())
-    .AddJsonOptions(options => options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.Converters.Add(new Border.Api.Serialization.DayOfWeekJsonConverter());
+        options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+    });
 builder.Services.AddProblemDetails();
 builder.Services.AddAntiforgery(options =>
 {

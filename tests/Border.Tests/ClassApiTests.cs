@@ -184,6 +184,42 @@ public sealed class ClassApiTests(StudentApiFactory factory) : IClassFixture<Stu
         Assert.DoesNotContain("database-password", await response.Content.ReadAsStringAsync(), StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task ScheduleDay_UsesNumericContract_ForEditSaveReloadAndCreate()
+    {
+        await factory.ResetAsync();
+        var seed = await SeedAsync();
+        using var client = Client("Management");
+        var editRequest = new
+        {
+            name = "Çarşamba Sınıfı", description = (string?)null, instructorId = seed.InstructorOneId, studioRoomId = seed.RoomOneId,
+            capacity = 10, level = (string?)null, ageGroup = (string?)null, status = "Active", startDate = "2026-01-01", endDate = (string?)null,
+            schedules = new[] { new { dayOfWeek = 3, startTime = "19:00:00", endTime = "20:15:00" } }
+        };
+        var edit = await MutationAsync(client, HttpMethod.Put, $"/api/classes/{seed.FirstClassId}", editRequest);
+        edit.EnsureSuccessStatusCode();
+        var editJson = await edit.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(JsonValueKind.Number, editJson.GetProperty("schedules")[0].GetProperty("dayOfWeek").ValueKind);
+        Assert.Equal(3, editJson.GetProperty("schedules")[0].GetProperty("dayOfWeek").GetInt32());
+
+        var reload = await client.GetFromJsonAsync<JsonElement>($"/api/classes/{seed.FirstClassId}");
+        Assert.Equal(3, reload.GetProperty("schedules")[0].GetProperty("dayOfWeek").GetInt32());
+        var list = await client.GetFromJsonAsync<JsonElement>("/api/classes?pageSize=100");
+        var listedClass = list.GetProperty("items").EnumerateArray().Single(x => x.GetProperty("id").GetGuid() == seed.FirstClassId);
+        Assert.Equal(3, listedClass.GetProperty("schedules")[0].GetProperty("dayOfWeek").GetInt32());
+
+        var createRequest = new
+        {
+            name = "Perşembe Sınıfı", description = (string?)null, instructorId = seed.InstructorOneId, studioRoomId = seed.RoomOneId,
+            capacity = 10, level = (string?)null, ageGroup = (string?)null, status = "Active", startDate = "2026-01-01", endDate = (string?)null,
+            schedules = new[] { new { dayOfWeek = 4, startTime = "20:15:00", endTime = "21:30:00" } }
+        };
+        var create = await MutationAsync(client, HttpMethod.Post, "/api/classes", createRequest);
+        create.EnsureSuccessStatusCode();
+        var createJson = await create.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(4, createJson.GetProperty("schedules")[0].GetProperty("dayOfWeek").GetInt32());
+    }
+
     private async Task<Seed> SeedAsync(int capacity = 10)
     {
         await using var scope = factory.Services.CreateAsyncScope();

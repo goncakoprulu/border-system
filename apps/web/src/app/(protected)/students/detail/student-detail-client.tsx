@@ -13,8 +13,9 @@ import { StudentFormDialog } from "@/components/students/student-form-dialog";
 import { StatusBadge } from "@/components/students/status-badge";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { calculateAge, formatDate, Guardian, studentKeys, studentStatuses, studentStatusLabels, studentsApi } from "@/lib/students";
-import { dayLabels, displayTime, enrollmentStatusLabels } from "@/lib/classes";
+import { enrollmentStatusLabels } from "@/lib/classes";
 import { classDetailHref, isGuid } from "@/lib/routes";
+import { scheduleDayTimeText } from "@/lib/schedule-days";
 
 export function StudentDetailClient() {
   const id = useSearchParams().get("id");
@@ -65,7 +66,7 @@ function StudentDetailContent({ id }: { id: string }) {
         <Section title="Öğrenci durumu" icon={<CalendarDays size={18} />}>
           <label htmlFor="student-status" className="mb-2 block text-xs font-medium uppercase tracking-wide text-zinc-400">Operasyonel durum</label><select id="student-status" value={student.status} disabled={statusMutation.isPending} onChange={(event) => statusMutation.mutate(event.target.value as (typeof studentStatuses)[number])} className="h-10 w-full rounded-lg border bg-white px-3 text-sm">{studentStatuses.map((status) => <option key={status} value={status}>{studentStatusLabels[status]}</option>)}</select><p className="mt-3 text-xs leading-5 text-zinc-500">Durum değişikliği öğrenciyi veya geçmiş kayıtlarını silmez.</p>
         </Section>
-        <Section title="Sınıflar" icon={<GraduationCap size={18} />}>{student.classEnrollments.length === 0 ? <Empty text="Henüz sınıf kaydı bulunmuyor." compact /> : <div className="space-y-3">{student.classEnrollments.map((enrollment) => <Link key={enrollment.id} href={classDetailHref(enrollment.classId)} className="block rounded-lg border p-3 hover:border-[#879878]"><div className="flex items-start justify-between gap-2"><div><p className="text-sm font-medium">{enrollment.className}</p><p className="mt-1 text-xs text-zinc-500">{enrollment.instructorName} · {enrollment.roomName}</p></div><span className="text-xs text-zinc-500">{enrollmentStatusLabels[enrollment.status]}</span></div><p className="mt-2 text-xs text-zinc-500">{enrollment.schedules.map((x) => `${dayLabels[x.dayOfWeek]} ${displayTime(x.startTime)}–${displayTime(x.endTime)}`).join(", ") || "Program yok"}</p><p className="mt-1 text-xs text-zinc-400">{formatDate(enrollment.startDate)} – {formatDate(enrollment.endDate)}</p></Link>)}</div>}</Section>
+        <Section title="Sınıflar" icon={<GraduationCap size={18} />}>{student.classEnrollments.length === 0 ? <Empty text="Henüz sınıf kaydı bulunmuyor." compact /> : <div className="space-y-3">{student.classEnrollments.map((enrollment) => <Link key={enrollment.id} href={classDetailHref(enrollment.classId)} className="block rounded-lg border p-3 hover:border-[#879878]"><div className="flex items-start justify-between gap-2"><div><p className="text-sm font-medium">{enrollment.className}</p><p className="mt-1 text-xs text-zinc-500">{enrollment.instructorName} · {enrollment.roomName}</p></div><span className="text-xs text-zinc-500">{enrollmentStatusLabels[enrollment.status]}</span></div><p className="mt-2 text-xs text-zinc-500">{enrollment.schedules.map((x) => scheduleDayTimeText(x.dayOfWeek, x.startTime, x.endTime)).join(", ") || "Program yok"}</p><p className="mt-1 text-xs text-zinc-400">{formatDate(enrollment.startDate)} – {formatDate(enrollment.endDate)}</p></Link>)}</div>}</Section>
         <Section title="Yoklama" icon={<CalendarDays size={18} />}><Empty text="Yoklama geçmişi henüz bu ekrana bağlı değil." compact /></Section>
         <Section title="Üyelik ve ödemeler" icon={<Archive size={18} />}><Empty text="Finansal işlemler bu fazda uygulanmadı." compact /></Section>
       </aside>
