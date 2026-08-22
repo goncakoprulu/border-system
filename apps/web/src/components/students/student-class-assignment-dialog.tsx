@@ -13,9 +13,14 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { apiQuery } from "@/lib/api";
 import { classesApi, classKeys } from "@/lib/classes";
 import { formErrorMessage } from "@/lib/form-errors";
 import { studentKeys } from "@/lib/students";
+
+type StudentPage = {
+  items: { id: string; firstName: string; lastName: string }[];
+};
 
 const today = () =>
   new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Istanbul" }).format(
@@ -27,7 +32,7 @@ export function StudentClassAssignmentDialog({
   open,
   onOpenChange,
 }: {
-  student: { id: string; name: string };
+  student?: { id: string; name: string };
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
@@ -40,19 +45,25 @@ export function StudentClassAssignmentDialog({
       ),
     enabled: open,
   });
+  const students = useQuery({
+    queryKey: ["student-options"],
+    queryFn: () =>
+      apiQuery<StudentPage>("/api/students?pageSize=100&status=Active"),
+    enabled: open && !student,
+  });
   const mutation = useMutation({
     mutationFn: ({
       classId,
       startDate,
+      studentId,
     }: {
       classId: string;
       startDate: string;
-    }) => classesApi.enroll(classId, student.id, startDate),
+      studentId: string;
+    }) => classesApi.enroll(classId, studentId, startDate),
     onSuccess: async (_, input) => {
       await Promise.all([
-        queryClient.invalidateQueries({
-          queryKey: studentKeys.detail(student.id),
-        }),
+        queryClient.invalidateQueries({ queryKey: studentKeys.all }),
         queryClient.invalidateQueries({
           queryKey: classKeys.detail(input.classId),
         }),
@@ -75,7 +86,9 @@ export function StudentClassAssignmentDialog({
         <DialogHeader>
           <DialogTitle>Sınıfa ata</DialogTitle>
           <DialogDescription>
-            {student.name} için aktif bir sınıf ve başlangıç tarihi seçin.
+            {student
+              ? `${student.name} için aktif bir sınıf ve başlangıç tarihi seçin.`
+              : "Aktif bir öğrenci, sınıf ve başlangıç tarihi seçin."}
           </DialogDescription>
         </DialogHeader>
         <form
@@ -87,9 +100,30 @@ export function StudentClassAssignmentDialog({
             mutation.mutate({
               classId: String(form.get("classId")),
               startDate: String(form.get("startDate")),
+              studentId: student?.id ?? String(form.get("studentId")),
             });
           }}
         >
+          {!student && (
+            <div>
+              <Label className="mb-2 block" htmlFor="assign-student">
+                Öğrenci
+              </Label>
+              <select
+                id="assign-student"
+                name="studentId"
+                required
+                className="control"
+              >
+                <option value="">Seçin</option>
+                {students.data?.items.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.firstName} {item.lastName}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div>
             <Label className="mb-2 block" htmlFor="assign-class">
               Sınıf
@@ -120,13 +154,19 @@ export function StudentClassAssignmentDialog({
               required
             />
           </div>
-          {classes.isError && <ErrorMessage error={classes.error} />}{" "}
+          {(classes.isError || students.isError) && (
+            <ErrorMessage error={classes.error ?? students.error} />
+          )}{" "}
           {mutation.isError && <ErrorMessage error={mutation.error} />}
           <Button
             className="w-full"
             type="submit"
             disabled={
-              classes.isLoading || classes.isError || mutation.isPending
+              classes.isLoading ||
+              students.isLoading ||
+              classes.isError ||
+              students.isError ||
+              mutation.isPending
             }
             aria-busy={mutation.isPending}
           >

@@ -14,11 +14,16 @@ export type Balance = { studentId:string; studentName:string; totalDebt:number; 
 export type Balances = { summary:{openBalance:number; debtorCount:number; collectedThisMonth:number; overdueTotal:number}; items:Balance[] };
 export type StudentFinanceOverview = { totalInvoiced:number; totalPaid:number; openBalance:number; overdueBalance:number; memberships:{id:string;planId:string;planName:string;startDate:string;endDate:string|null;status:string;price:number;discountAmount:number|null;discountReason:string|null}[]; invoices:{id:string;description:string;amount:number;paid:number;remaining:number;dueDate:string;status:string}[]; payments:{id:string;invoiceId:string|null;invoiceDescription:string|null;amount:number;paymentDate:string;paymentMethod:string;notes:string|null}[] };
 export type Reports = { activeStudents:number; activeClasses:number; collectedThisMonth:number; openBalance:number; averageOccupancy:number; attendanceRate:number; monthlyCollections:{label:string;value:number}[]; studentStatuses:{label:string;value:number}[]; classOccupancies:{label:string;value:number}[] };
+export type DashboardLesson = { sessionId:string; classId:string; className:string; instructorName:string; roomName:string; scheduledStart:string; scheduledEnd:string; studentCount:number; capacity:number; isAttendanceCompleted:boolean };
+export type DashboardOperations = { activeStudentCount:number; todayLessonCount:number; todayLessons:DashboardLesson[] };
+export type DashboardAnalytics = { canViewFinance:boolean; monthlyRevenue:number; outstandingBalance:number; attendanceRate:number; newStudents:number; totalPayments:number; activeMemberships:number; alerts:{type:string;count:number;label:string;href:string}[]; thirtyDayRevenue:{label:string;value:number}[] };
 export type InstructorDetail = { id:string; firstName:string; lastName:string; phone:string|null; email:string|null; userId:string|null; linkedUserName:string|null; isArchived:boolean; activeClassCount:number; schedule:ScheduleItem[] };
 export type UserRecord = { id:string; displayName:string; email:string; roles:string[]; isActive:boolean };
 
 export const operationKeys = { section:(name:string, suffix="") => ["operations",name,suffix] as const };
 export const operationsApi = {
+  dashboardOperations:() => apiQuery<DashboardOperations>("/api/dashboard/operations"),
+  dashboardAnalytics:() => apiQuery<DashboardAnalytics>("/api/dashboard/analytics"),
   schedule:(params="") => apiQuery<ScheduleItem[]>(`/api/schedule${params ? `?${params}` : ""}`),
   sessions:(params:string) => apiQuery<Session[]>(`/api/attendance/sessions?${params}`),
   attendance:(id:string) => apiQuery<AttendanceDetail>(`/api/attendance/sessions/${id}`),

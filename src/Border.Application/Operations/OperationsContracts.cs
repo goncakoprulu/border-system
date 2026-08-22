@@ -29,6 +29,10 @@ public sealed record StudentFinanceOverviewResponse(decimal TotalInvoiced, decim
 
 public sealed record ReportPointResponse(string Label, decimal Value);
 public sealed record ReportsResponse(int ActiveStudents, int ActiveClasses, decimal CollectedThisMonth, decimal OpenBalance, decimal AverageOccupancy, decimal AttendanceRate, IReadOnlyCollection<ReportPointResponse> MonthlyCollections, IReadOnlyCollection<ReportPointResponse> StudentStatuses, IReadOnlyCollection<ReportPointResponse> ClassOccupancies);
+public sealed record DashboardLessonResponse(Guid SessionId, Guid ClassId, string ClassName, string InstructorName, string RoomName, DateTime ScheduledStart, DateTime ScheduledEnd, int StudentCount, int Capacity, bool IsAttendanceCompleted);
+public sealed record DashboardOperationsResponse(int ActiveStudentCount, int TodayLessonCount, IReadOnlyCollection<DashboardLessonResponse> TodayLessons);
+public sealed record DashboardAlertResponse(string Type, int Count, string Label, string Href);
+public sealed record DashboardAnalyticsResponse(bool CanViewFinance, decimal MonthlyRevenue, decimal OutstandingBalance, decimal AttendanceRate, int NewStudents, decimal TotalPayments, int ActiveMemberships, IReadOnlyCollection<DashboardAlertResponse> Alerts, IReadOnlyCollection<ReportPointResponse> ThirtyDayRevenue);
 public sealed record InstructorDetailResponse(Guid Id, string FirstName, string LastName, string? Phone, string? Email, string? UserId, string? LinkedUserName, bool IsArchived, int ActiveClassCount, IReadOnlyCollection<ScheduleItemResponse> Schedule);
 public sealed record UserResponse(string Id, string DisplayName, string Email, IReadOnlyCollection<string> Roles, bool IsActive);
 public sealed record UpdateUserRequest(string DisplayName, bool IsActive, IReadOnlyCollection<string> Roles);
@@ -51,5 +55,7 @@ public interface IOperationsService
     Task<BalancesResponse> GetBalancesAsync(string? search, CancellationToken ct);
     Task<StudentFinanceOverviewResponse?> GetStudentFinanceOverviewAsync(Guid studentId, CancellationToken ct);
     Task<ReportsResponse> GetReportsAsync(CancellationToken ct);
+    Task<DashboardOperationsResponse> GetDashboardOperationsAsync(string? userId, bool instructorOnly, CancellationToken ct);
+    Task<DashboardAnalyticsResponse> GetDashboardAnalyticsAsync(string? userId, bool instructorOnly, bool canViewFinance, CancellationToken ct);
     Task<InstructorDetailResponse?> GetInstructorAsync(Guid id, CancellationToken ct);
 }

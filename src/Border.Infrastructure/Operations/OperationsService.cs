@@ -39,6 +39,57 @@ internal sealed class OperationsService(BorderDbContext db) : IOperationsService
             x.Status == LessonSessionStatus.Completed || db.Attendances.Any(a => a.LessonSessionId == x.Id))).ToListAsync(ct);
     }
 
+    public async Task<DashboardOperationsResponse> GetDashboardOperationsAsync(string? userId, bool instructorOnly, CancellationToken ct)
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(3));
+        await EnsureSessionsAsync(today, ct);
+        var start = IstanbulStart(today); var end = start.AddDays(1);
+        var lessonsQuery = db.LessonSessions.AsNoTracking().Where(x => !x.StudioClass.IsDeleted && x.ScheduledStart >= start && x.ScheduledStart < end && x.Status != LessonSessionStatus.Cancelled);
+        if (instructorOnly) lessonsQuery = lessonsQuery.Where(x => x.Instructor.UserId == userId);
+        var lessons = await lessonsQuery.OrderBy(x => x.ScheduledStart)
+            .Select(x => new DashboardLessonResponse(x.Id, x.StudioClassId, x.StudioClass.Name, x.Instructor.FirstName + " " + x.Instructor.LastName, x.StudioRoom.Name, x.ScheduledStart, x.ScheduledEnd,
+                db.ClassEnrollments.Count(e => e.StudioClassId == x.StudioClassId && e.Status == EnrollmentStatus.Active && e.StartDate <= today && (e.EndDate == null || e.EndDate >= today) && !e.Student.IsDeleted),
+                x.StudioClass.Capacity, x.Status == LessonSessionStatus.Completed || db.Attendances.Any(a => a.LessonSessionId == x.Id)))
+            .ToListAsync(ct);
+        var activeStudentCount = instructorOnly
+            ? await db.ClassEnrollments.AsNoTracking().Where(x => x.Status == EnrollmentStatus.Active && !x.Student.IsDeleted && !x.StudioClass.IsDeleted && x.Student.Status == StudentStatus.Active && x.StudioClass.Instructor.UserId == userId).Select(x => x.StudentId).Distinct().CountAsync(ct)
+            : await db.Students.AsNoTracking().CountAsync(x => !x.IsDeleted && x.Status == StudentStatus.Active, ct);
+        return new(activeStudentCount, lessons.Count, lessons);
+    }
+
+    public async Task<DashboardAnalyticsResponse> GetDashboardAnalyticsAsync(string? userId, bool instructorOnly, bool canViewFinance, CancellationToken ct)
+    {
+        var nowUtc = DateTime.UtcNow; var today = DateOnly.FromDateTime(nowUtc.AddHours(3));
+        var thirtyDayStart = today.AddDays(-29); var startUtc = IstanbulStart(thirtyDayStart); var endUtc = IstanbulStart(today.AddDays(1));
+        var attendanceQuery = db.Attendances.AsNoTracking().Where(x => x.LessonSession.ScheduledStart >= startUtc && x.LessonSession.ScheduledStart < endUtc);
+        if (instructorOnly) attendanceQuery = attendanceQuery.Where(x => x.LessonSession.Instructor.UserId == userId);
+        var attendance = await attendanceQuery.GroupBy(_ => 1).Select(x => new { Total = x.Count(), Attended = x.Count(a => a.Status == AttendanceStatus.Present || a.Status == AttendanceStatus.Late) }).SingleOrDefaultAsync(ct);
+        var attendanceRate = attendance is null || attendance.Total == 0 ? 0 : Math.Round(100m * attendance.Attended / attendance.Total, 1);
+        var newStudentsQuery = db.Students.AsNoTracking().Where(x => !x.IsDeleted && x.RegistrationDate >= thirtyDayStart && x.RegistrationDate <= today);
+        if (instructorOnly) newStudentsQuery = newStudentsQuery.Where(x => db.ClassEnrollments.Any(e => e.StudentId == x.Id && e.Status == EnrollmentStatus.Active && !e.StudioClass.IsDeleted && e.StudioClass.Instructor.UserId == userId));
+        var newStudents = await newStudentsQuery.CountAsync(ct);
+        var activeMemberships = canViewFinance ? await db.StudentMemberships.AsNoTracking().CountAsync(x => !x.Student.IsDeleted && x.Status == MembershipStatus.Active && x.StartDate <= today && (x.EndDate == null || x.EndDate >= today), ct) : 0;
+        var payments = canViewFinance ? await db.Payments.AsNoTracking().Where(x => x.PaymentDate >= startUtc && x.PaymentDate < endUtc).Select(x => new { x.PaymentDate, x.Amount }).ToListAsync(ct) : [];
+        var dailyRevenue = payments.GroupBy(x => DateOnly.FromDateTime(x.PaymentDate.AddHours(3))).ToDictionary(x => x.Key, x => x.Sum(p => p.Amount));
+        var revenuePoints = Enumerable.Range(0, 30).Select(offset => thirtyDayStart.AddDays(offset)).Select(date => new ReportPointResponse(date.ToString("dd.MM"), dailyRevenue.GetValueOrDefault(date))).ToList();
+        var monthStart = new DateOnly(today.Year, today.Month, 1); var monthlyRevenue = canViewFinance ? await db.Payments.AsNoTracking().Where(x => x.PaymentDate >= IstanbulStart(monthStart) && x.PaymentDate < endUtc).SumAsync(x => (decimal?)x.Amount, ct) ?? 0 : 0;
+        var invoiceRows = canViewFinance ? await db.Invoices.AsNoTracking().Where(x => x.Status != InvoiceStatus.Cancelled && !x.Student.IsDeleted).Select(x => new { x.StudentId, x.Amount, x.DueDate, Paid = db.Payments.Where(p => p.InvoiceId == x.Id).Sum(p => (decimal?)p.Amount) ?? 0 }).ToListAsync(ct) : [];
+        var outstandingBalance = invoiceRows.Sum(x => Math.Max(0, x.Amount - x.Paid));
+        var alerts = new List<DashboardAlertResponse>();
+        if (canViewFinance)
+        {
+            var overdue = invoiceRows.Count(x => x.DueDate < today && x.Amount > x.Paid); if (overdue > 0) alerts.Add(new("OverdueInvoices", overdue, $"{overdue} gecikmiş ödeme", "/balances"));
+            var debtors = invoiceRows.Where(x => x.Amount > x.Paid).Select(x => x.StudentId).Distinct().Count(); if (debtors > 0) alerts.Add(new("OpenBalances", debtors, $"{debtors} öğrencinin açık bakiyesi var", "/balances"));
+            var expiring = await db.StudentMemberships.AsNoTracking().CountAsync(x => !x.Student.IsDeleted && x.Status == MembershipStatus.Active && x.EndDate >= today && x.EndDate <= today.AddDays(7), ct); if (expiring > 0) alerts.Add(new("ExpiringMemberships", expiring, $"{expiring} üyelik 7 gün içinde bitiyor", "/memberships"));
+        }
+        var missingQuery = db.LessonSessions.AsNoTracking().Where(x => !x.StudioClass.IsDeleted && x.Status == LessonSessionStatus.Scheduled && x.ScheduledEnd >= startUtc && x.ScheduledEnd < nowUtc && !db.Attendances.Any(a => a.LessonSessionId == x.Id));
+        var capacityQuery = db.StudioClasses.AsNoTracking().Where(x => !x.IsDeleted && x.Status == StudioClassStatus.Active && 10 * db.ClassEnrollments.Count(e => e.StudioClassId == x.Id && e.Status == EnrollmentStatus.Active && !e.Student.IsDeleted) >= 9 * x.Capacity);
+        if (instructorOnly) { missingQuery = missingQuery.Where(x => x.Instructor.UserId == userId); capacityQuery = capacityQuery.Where(x => x.Instructor.UserId == userId); }
+        var missing = await missingQuery.CountAsync(ct); if (missing > 0) alerts.Add(new("MissingAttendance", missing, $"{missing} geçmiş dersin yoklaması eksik", "/attendance"));
+        var nearCapacity = await capacityQuery.CountAsync(ct); if (nearCapacity > 0) alerts.Add(new("NearCapacity", nearCapacity, $"{nearCapacity} sınıf %90 veya üzeri dolu", instructorOnly ? "/my-classes" : "/classes"));
+        return new(canViewFinance, monthlyRevenue, outstandingBalance, attendanceRate, newStudents, payments.Sum(x => x.Amount), activeMemberships, alerts, revenuePoints);
+    }
+
     public async Task<AttendanceDetailResponse?> GetAttendanceAsync(Guid sessionId, string? userId, bool instructorOnly, CancellationToken ct)
     {
         var session = await db.LessonSessions.AsNoTracking().Where(x => x.Id == sessionId && x.Status != LessonSessionStatus.Cancelled && (!instructorOnly || x.Instructor.UserId == userId))

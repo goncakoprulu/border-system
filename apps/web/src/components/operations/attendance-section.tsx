@@ -44,7 +44,7 @@ export function AttendanceSection() {
   const studentId = searchParams.get("studentId") ?? "";
   const queryClient = useQueryClient();
   const saveLock = useRef(false);
-  const [selectedId, setSelectedId] = useState("");
+  const [selectedId, setSelectedId] = useState(() => searchParams.get("sessionId") ?? "");
   const [selectedDate, setSelectedDate] = useState(today());
   const [instructorId, setInstructorId] = useState("");
   const [classId, setClassId] = useState("");

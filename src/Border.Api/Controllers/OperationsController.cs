@@ -13,6 +13,16 @@ namespace Border.Api.Controllers;
 [Route("api")]
 public sealed class OperationsController(IOperationsService operations, UserManager<AppUser> userManager) : ControllerBase
 {
+    [HttpGet("dashboard/operations")]
+    [Authorize(Policy = Policies.OperationsAccess)]
+    public async Task<ActionResult<DashboardOperationsResponse>> DashboardOperations(CancellationToken ct) =>
+        Ok(await operations.GetDashboardOperationsAsync(UserId(), InstructorOnly(), ct));
+
+    [HttpGet("dashboard/analytics")]
+    [Authorize(Policy = Policies.OperationsAccess)]
+    public async Task<ActionResult<DashboardAnalyticsResponse>> DashboardAnalytics(CancellationToken ct) =>
+        Ok(await operations.GetDashboardAnalyticsAsync(UserId(), InstructorOnly(), CanViewFinance(), ct));
+
     [HttpGet("schedule")]
     [Authorize(Policy = Policies.OperationsAccess)]
     public async Task<ActionResult<IReadOnlyCollection<ScheduleItemResponse>>> Schedule([FromQuery] Guid? roomId, [FromQuery] Guid? instructorId, [FromQuery] DayOfWeek? day, [FromQuery] Guid? classId, CancellationToken ct) => Ok(await operations.GetScheduleAsync(roomId, instructorId, day, classId, ct));
@@ -107,6 +117,7 @@ public sealed class OperationsController(IOperationsService operations, UserMana
 
     private string? UserId() => User.FindFirstValue(ClaimTypes.NameIdentifier);
     private bool InstructorOnly() => User.IsInRole(Roles.Instructor) && !User.IsInRole(Roles.Admin) && !User.IsInRole(Roles.Management) && !User.IsInRole(Roles.Reception);
+    private bool CanViewFinance() => User.IsInRole(Roles.Admin) || User.IsInRole(Roles.Management) || User.IsInRole(Roles.Reception);
     private BadRequestObjectResult Validation(string detail) => BadRequest(new ProblemDetails { Title = "Doğrulama hatası", Detail = detail, Status = 400 });
     private static DateOnly Today() => DateOnly.FromDateTime(DateTime.UtcNow.AddHours(3));
 }
