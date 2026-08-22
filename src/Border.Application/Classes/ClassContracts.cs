@@ -46,6 +46,7 @@ public interface IClassService
     Task<IReadOnlyCollection<InstructorLoginOptionResponse>> GetInstructorLoginOptionsAsync(CancellationToken cancellationToken);
     Task<ClassOperationResult<InstructorResponse>> CreateInstructorAsync(InstructorUpsertRequest request, CancellationToken cancellationToken);
     Task<ClassOperationResult<InstructorResponse>> UpdateInstructorAsync(Guid id, InstructorUpsertRequest request, CancellationToken cancellationToken);
+    Task<ClassOperationResult<bool>> ArchiveInstructorAsync(Guid id, CancellationToken cancellationToken);
     Task<IReadOnlyCollection<StudioRoomResponse>> GetRoomsAsync(bool includeArchived, CancellationToken cancellationToken);
     Task<StudioRoomResponse> CreateRoomAsync(StudioRoomUpsertRequest request, CancellationToken cancellationToken);
     Task<StudioRoomResponse?> UpdateRoomAsync(Guid id, StudioRoomUpsertRequest request, CancellationToken cancellationToken);

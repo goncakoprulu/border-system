@@ -18,6 +18,10 @@ public static class Policies
     public const string StudentsArchive = "StudentsArchive";
     public const string ClassesAccess = "ClassesAccess";
     public const string ClassesManage = "ClassesManage";
+    public const string OperationsAccess = "OperationsAccess";
+    public const string FinanceAccess = "FinanceAccess";
+    public const string ReportsAccess = "ReportsAccess";
+    public const string SettingsManage = "SettingsManage";
 }
 
 public sealed record LoginRequest(string Email, string Password, bool RememberMe = false);

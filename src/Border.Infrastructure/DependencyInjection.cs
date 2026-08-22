@@ -6,6 +6,8 @@ using Border.Application.Students;
 using Border.Infrastructure.Students;
 using Border.Application.Classes;
 using Border.Infrastructure.Classes;
+using Border.Application.Operations;
+using Border.Infrastructure.Operations;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -71,6 +73,7 @@ public static class DependencyInjection
         services.AddScoped<IAuditWriter, AuditWriter>();
         services.AddScoped<IStudentService, StudentService>();
         services.AddScoped<IClassService, ClassService>();
+        services.AddScoped<IOperationsService, OperationsService>();
         services.AddScoped<DatabaseSeeder>();
         services.AddScoped<DemoDataSeeder>();
         return services;

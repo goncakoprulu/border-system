@@ -34,6 +34,7 @@ export const classesApi = {
   instructorLogins: () => apiQuery<InstructorLoginOption[]>("/api/instructors/login-options"),
   createInstructor: (input: InstructorInput) => apiMutation<InstructorRecord>("/api/instructors", "POST", input),
   updateInstructor: (id: string, input: InstructorInput) => apiMutation<InstructorRecord>(`/api/instructors/${id}`, "PUT", input),
+  archiveInstructor: (id: string) => apiMutation<void>(`/api/instructors/${id}`, "DELETE"),
   rooms: () => apiQuery<StudioRoom[]>("/api/rooms"),
   createRoom: (input: RoomInput) => apiMutation<StudioRoom>("/api/rooms", "POST", input),
   updateRoom: (id: string, input: RoomInput) => apiMutation<StudioRoom>(`/api/rooms/${id}`, "PUT", input),

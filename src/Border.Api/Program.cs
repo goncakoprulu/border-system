@@ -98,6 +98,10 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy(Policies.StudentsArchive, policy => policy.RequireRole(Roles.Admin, Roles.Management));
     options.AddPolicy(Policies.ClassesAccess, policy => policy.RequireRole(Roles.Admin, Roles.Management, Roles.Reception, Roles.Instructor));
     options.AddPolicy(Policies.ClassesManage, policy => policy.RequireRole(Roles.Admin, Roles.Management, Roles.Reception));
+    options.AddPolicy(Policies.OperationsAccess, policy => policy.RequireRole(Roles.Admin, Roles.Management, Roles.Reception, Roles.Instructor));
+    options.AddPolicy(Policies.FinanceAccess, policy => policy.RequireRole(Roles.Admin, Roles.Management, Roles.Reception));
+    options.AddPolicy(Policies.ReportsAccess, policy => policy.RequireRole(Roles.Admin, Roles.Management));
+    options.AddPolicy(Policies.SettingsManage, policy => policy.RequireRole(Roles.Admin));
 });
 builder.Services.AddHealthChecks().AddDbContextCheck<BorderDbContext>();
 builder.Services.AddEndpointsApiExplorer();

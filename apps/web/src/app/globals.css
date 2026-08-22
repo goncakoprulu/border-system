@@ -1,4 +1,8 @@
 @import "tailwindcss";
+
+@layer components {
+  .control { @apply h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm outline-none transition focus:border-[#718360] focus:ring-2 focus:ring-[#718360]/15; }
+}
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 

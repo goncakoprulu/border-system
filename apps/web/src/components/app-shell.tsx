@@ -20,12 +20,12 @@ const managementNav: NavItem[] = [
   { label: "Panel", href: "/dashboard", icon: Home },
   { label: "Öğrenciler", href: "/students", icon: Users, roles: ["Admin", "Management", "Reception"] },
   { label: "Sınıflar", href: "/classes", icon: GraduationCap, roles: ["Admin", "Management", "Reception"] },
-  { label: "Program", href: "/schedule", icon: CalendarDays, roles: ["Management", "Reception"] },
-  { label: "Yoklama", href: "/attendance", icon: ClipboardCheck, roles: ["Management"] },
+  { label: "Program", href: "/schedule", icon: CalendarDays, roles: ["Admin", "Management", "Reception"] },
+  { label: "Yoklama", href: "/attendance", icon: ClipboardCheck, roles: ["Admin", "Management", "Reception"] },
   { label: "Üyelikler", href: "/memberships", icon: WalletCards, roles: ["Management", "Reception"] },
   { label: "Ödemeler", href: "/payments", icon: Banknote, roles: ["Management", "Reception"] },
   { label: "Borç Bakiyeleri", href: "/balances", icon: ReceiptText, roles: ["Management", "Reception"] },
-  { label: "Raporlar", href: "/reports", icon: ShieldCheck, roles: ["Management"] },
+  { label: "Raporlar", href: "/reports", icon: ShieldCheck, roles: ["Admin", "Management"] },
   { label: "Eğitmenler", href: "/instructors", icon: UserCog, roles: ["Management"] },
 ];
 const instructorNav: NavItem[] = [
@@ -62,7 +62,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     if (!user) return [];
     const isInstructorOnly = user.roles.includes("Instructor") && !user.roles.some((r) => ["Management", "Reception", "Admin"].includes(r));
     if (isInstructorOnly) return instructorNav;
-    return managementNav.filter((item) => !item.roles || item.roles.some((role) => user.roles.includes(role)));
+    const isAdmin = user.roles.includes("Admin");
+    return managementNav.filter((item) => isAdmin || !item.roles || item.roles.some((role) => user.roles.includes(role)));
   }, [user]);
   const adminItems = systemNav.filter((item) => item.roles?.some((role) => user?.roles.includes(role)));
 

@@ -236,6 +236,19 @@ internal sealed class ClassService(BorderDbContext dbContext, IAuditWriter audit
         return ClassOperationResult<InstructorResponse>.Success(Map(instructor));
     }
 
+    public async Task<ClassOperationResult<bool>> ArchiveInstructorAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var instructor = await dbContext.Instructors.SingleOrDefaultAsync(x => x.Id == id && !x.IsDeleted, cancellationToken);
+        if (instructor is null) return ClassOperationResult<bool>.NotFound();
+        if (await dbContext.StudioClasses.AnyAsync(x => x.InstructorId == id && !x.IsDeleted && (x.Status == StudioClassStatus.Planned || x.Status == StudioClassStatus.Active || x.Status == StudioClassStatus.Paused), cancellationToken))
+            return ClassOperationResult<bool>.Conflict("Aktif veya planlı dersi bulunan eğitmen arşivlenemez.");
+        var old = new { instructor.FirstName, instructor.LastName, instructor.UserId };
+        instructor.IsDeleted = true; instructor.UserId = null;
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await auditWriter.WriteAsync("InstructorArchived", nameof(Instructor), id.ToString(), old, new { instructor.IsDeleted }, cancellationToken);
+        return ClassOperationResult<bool>.Success(true);
+    }
+
     public async Task<IReadOnlyCollection<StudioRoomResponse>> GetRoomsAsync(bool includeArchived, CancellationToken cancellationToken) =>
         await dbContext.StudioRooms.AsNoTracking().Where(x => includeArchived || !x.IsDeleted).OrderBy(x => x.Name)
             .Select(x => new StudioRoomResponse(x.Id, x.Name, x.Description, x.Capacity, x.IsActive, x.IsDeleted)).ToListAsync(cancellationToken);

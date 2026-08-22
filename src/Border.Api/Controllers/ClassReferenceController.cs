@@ -43,6 +43,15 @@ public sealed class ClassReferenceController(IClassService classService) : Contr
         return result.IsConflict ? Conflict(new ProblemDetails { Title = "İşlem çakışması", Detail = result.Error, Status = 409 }) : NotFound();
     }
 
+    [HttpDelete("api/instructors/{id:guid}")]
+    [Authorize(Roles = Roles.Admin + "," + Roles.Management)]
+    public async Task<IActionResult> ArchiveInstructor(Guid id, CancellationToken cancellationToken)
+    {
+        var result = await classService.ArchiveInstructorAsync(id, cancellationToken);
+        if (result.Value) return NoContent();
+        return result.IsConflict ? Conflict(new ProblemDetails { Title = "İşlem çakışması", Detail = result.Error, Status = 409 }) : NotFound();
+    }
+
     [HttpGet("api/rooms")]
     public async Task<ActionResult<IReadOnlyCollection<StudioRoomResponse>>> GetRooms([FromQuery] bool includeArchived = false, CancellationToken cancellationToken = default)
     {
