@@ -74,6 +74,7 @@ public static class DependencyInjection
         services.AddScoped<IStudentService, StudentService>();
         services.AddScoped<IClassService, ClassService>();
         services.AddScoped<IOperationsService, OperationsService>();
+        services.AddScoped<IReportingService, ReportingService>();
         services.AddScoped<DatabaseSeeder>();
         services.AddScoped<DemoDataSeeder>();
         return services;

@@ -64,7 +64,7 @@ internal sealed class OperationsService(BorderDbContext db) : IOperationsService
         var attendanceQuery = db.Attendances.AsNoTracking().Where(x => x.LessonSession.ScheduledStart >= startUtc && x.LessonSession.ScheduledStart < endUtc);
         if (instructorOnly) attendanceQuery = attendanceQuery.Where(x => x.LessonSession.Instructor.UserId == userId);
         var attendance = await attendanceQuery.GroupBy(_ => 1).Select(x => new { Total = x.Count(), Attended = x.Count(a => a.Status == AttendanceStatus.Present || a.Status == AttendanceStatus.Late) }).SingleOrDefaultAsync(ct);
-        var attendanceRate = attendance is null || attendance.Total == 0 ? 0 : Math.Round(100m * attendance.Attended / attendance.Total, 1);
+        var attendanceRate = attendance is null ? 0 : AttendanceReportingRules.RateFromAttended(attendance.Attended, attendance.Total);
         var newStudentsQuery = db.Students.AsNoTracking().Where(x => !x.IsDeleted && x.RegistrationDate >= thirtyDayStart && x.RegistrationDate <= today);
         if (instructorOnly) newStudentsQuery = newStudentsQuery.Where(x => db.ClassEnrollments.Any(e => e.StudentId == x.Id && e.Status == EnrollmentStatus.Active && !e.StudioClass.IsDeleted && e.StudioClass.Instructor.UserId == userId));
         var newStudents = await newStudentsQuery.CountAsync(ct);

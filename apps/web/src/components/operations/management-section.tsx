@@ -23,6 +23,7 @@ import { toast } from "sonner";
 import { InstructorManagementDialog } from "@/components/classes/instructor-management-dialog";
 import { RoomManagementDialog } from "@/components/classes/room-management-dialog";
 import { AttendanceSection } from "@/components/operations/attendance-section";
+import { ReportsSection } from "@/components/operations/reports-section";
 import {
   MembershipDialog,
   PaymentDialog,
@@ -170,7 +171,7 @@ export function ManagementSection({ section }: { section: Section }) {
         ) : section === "balances" ? (
           <Balances />
         ) : section === "reports" ? (
-          <Reports />
+          <ReportsSection />
         ) : section === "instructors" ? (
           <Instructors />
         ) : section === "users" ? (
@@ -603,87 +604,6 @@ function Balances() {
         )}
       </Panel>
     </>
-  );
-}
-
-function Reports() {
-  const q = useQuery({
-    queryKey: operationKeys.section("reports"),
-    queryFn: operationsApi.reports,
-  });
-  if (q.isLoading)
-    return (
-      <Panel>
-        <Loading />
-      </Panel>
-    );
-  if (q.isError)
-    return (
-      <Panel>
-        <ErrorState error={q.error} />
-      </Panel>
-    );
-  const d = q.data!;
-  return (
-    <>
-      <Metrics
-        items={[
-          ["Aktif öğrenci", String(d.activeStudents)],
-          ["Aktif sınıf", String(d.activeClasses)],
-          ["Bu ay tahsilat", money(d.collectedThisMonth)],
-          ["Açık bakiye", money(d.openBalance)],
-          ["Ort. doluluk", `%${d.averageOccupancy}`],
-          ["Yoklama oranı", `%${d.attendanceRate}`],
-        ]}
-      />
-      <div className="grid gap-5 lg:grid-cols-3">
-        <Chart title="Aylık tahsilat" data={d.monthlyCollections} moneyValues />
-        <Chart title="Öğrenci durumları" data={d.studentStatuses} />
-        <Chart title="Sınıf dolulukları" data={d.classOccupancies} suffix="%" />
-      </div>
-    </>
-  );
-}
-function Chart({
-  title,
-  data,
-  moneyValues = false,
-  suffix = "",
-}: {
-  title: string;
-  data: { label: string; value: number }[];
-  moneyValues?: boolean;
-  suffix?: string;
-}) {
-  const max = Math.max(...data.map((x) => x.value), 1);
-  return (
-    <Panel>
-      <div className="p-5">
-        <h2 className="font-semibold">{title}</h2>
-        <div className="mt-5 space-y-4">
-          {data.length === 0 ? (
-            <p className="text-sm text-zinc-500">Henüz veri yok.</p>
-          ) : (
-            data.map((x) => (
-              <div key={x.label}>
-                <div className="mb-1 flex justify-between gap-3 text-xs">
-                  <span className="truncate text-zinc-600">{x.label}</span>
-                  <span className="font-medium">
-                    {moneyValues ? money(x.value) : x.value + suffix}
-                  </span>
-                </div>
-                <div className="h-2 overflow-hidden rounded-full bg-zinc-100">
-                  <div
-                    className="h-full rounded-full bg-[#718360]"
-                    style={{ width: `${Math.max(2, (100 * x.value) / max)}%` }}
-                  />
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-    </Panel>
   );
 }
 
