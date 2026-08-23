@@ -8,10 +8,12 @@ export type AttendanceDetail = { session:Session; students:AttendanceStudent[] }
 export type StudentAttendanceHistory = { total:number; present:number; absent:number; excused:number; late:number; makeUp:number; attendanceRate:number; items:{attendanceId:string;sessionId:string;classId:string;className:string;scheduledStart:string;status:AttendanceStatus;notes:string|null}[] };
 export type Membership = { id:string; studentId:string; studentName:string; planId:string; planName:string; planType:string; startDate:string; endDate:string|null; status:string; price:number; remainingLessons:number|null };
 export type Plan = { id:string; name:string; type:string; defaultPrice:number; lessonCount:number|null; durationMonths:number|null; isActive:boolean };
-export type Invoice = { id:string; description:string; amount:number; paid:number; remaining:number; dueDate:string };
+export type Invoice = { id:string; description:string; amount:number; paid:number; remaining:number; dueDate:string; status:string };
 export type Payment = { id:string; studentId:string; studentName:string; amount:number; paymentDate:string; paymentMethod:string; invoiceId:string|null; invoiceDescription:string|null; notes:string|null };
-export type Balance = { studentId:string; studentName:string; totalDebt:number; paid:number; remaining:number; lastPaymentDate:string|null };
+export type DebtStatus = "None"|"Open"|"Overdue";
+export type Balance = { studentId:string; studentName:string; totalDebt:number; paid:number; remaining:number; lastPaymentDate:string|null; overdueBalance:number; openInvoiceCount:number; overdueInvoiceCount:number; status:DebtStatus };
 export type Balances = { summary:{openBalance:number; debtorCount:number; collectedThisMonth:number; overdueTotal:number}; items:Balance[] };
+export type BalanceFilters = { search?:string; overdueOnly?:boolean; openOnly?:boolean; includeSettled?:boolean };
 export type StudentFinanceOverview = { totalInvoiced:number; totalPaid:number; openBalance:number; overdueBalance:number; memberships:{id:string;planId:string;planName:string;startDate:string;endDate:string|null;status:string;price:number;discountAmount:number|null;discountReason:string|null}[]; invoices:{id:string;description:string;amount:number;paid:number;remaining:number;dueDate:string;status:string}[]; payments:{id:string;invoiceId:string|null;invoiceDescription:string|null;amount:number;paymentDate:string;paymentMethod:string;notes:string|null}[] };
 export type Reports = { activeStudents:number; activeClasses:number; collectedThisMonth:number; openBalance:number; averageOccupancy:number; attendanceRate:number; monthlyCollections:{label:string;value:number}[]; studentStatuses:{label:string;value:number}[]; classOccupancies:{label:string;value:number}[] };
 export type DashboardLesson = { sessionId:string; classId:string; className:string; instructorName:string; roomName:string; scheduledStart:string; scheduledEnd:string; studentCount:number; capacity:number; isAttendanceCompleted:boolean };
@@ -37,7 +39,15 @@ export const operationsApi = {
   payments:(params="") => apiQuery<Payment[]>(`/api/payments${params ? `?${params}` : ""}`),
   invoices:(studentId:string) => apiQuery<Invoice[]>(`/api/students/${studentId}/open-invoices`),
   createPayment:(input:unknown) => apiMutation<Payment>("/api/payments","POST",input),
-  balances:(search="") => apiQuery<Balances>(`/api/balances${search ? `?search=${encodeURIComponent(search)}` : ""}`),
+  balances:(filters:BalanceFilters={}) => {
+    const params = new URLSearchParams();
+    if (filters.search?.trim()) params.set("search",filters.search.trim());
+    if (filters.overdueOnly) params.set("overdueOnly","true");
+    if (filters.openOnly) params.set("openOnly","true");
+    if (filters.includeSettled) params.set("includeSettled","true");
+    const query=params.toString();
+    return apiQuery<Balances>(`/api/balances${query?`?${query}`:""}`);
+  },
   studentFinance:(studentId:string) => apiQuery<StudentFinanceOverview>(`/api/students/${studentId}/finance-overview`),
   reports:() => apiQuery<Reports>("/api/reports"),
   instructor:(id:string) => apiQuery<InstructorDetail>(`/api/instructors/${id}`),

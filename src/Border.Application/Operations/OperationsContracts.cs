@@ -16,10 +16,11 @@ public sealed record CreateMembershipRequest(Guid StudentId, Guid PlanId, DateOn
 public sealed record MembershipPlanResponse(Guid Id, string Name, MembershipPlanType Type, decimal DefaultPrice, int? LessonCount, int? DurationMonths, bool IsActive);
 public sealed record MembershipPlanRequest(string Name, MembershipPlanType Type, decimal DefaultPrice, int? LessonCount, int? DurationMonths, bool IsActive = true);
 
-public sealed record InvoiceOptionResponse(Guid Id, string Description, decimal Amount, decimal Paid, decimal Remaining, DateOnly DueDate);
+public sealed record InvoiceOptionResponse(Guid Id, string Description, decimal Amount, decimal Paid, decimal Remaining, DateOnly DueDate, InvoiceStatus Status);
 public sealed record PaymentListItemResponse(Guid Id, Guid StudentId, string StudentName, decimal Amount, DateTime PaymentDate, PaymentMethod PaymentMethod, Guid? InvoiceId, string? InvoiceDescription, string? Notes);
 public sealed record CreatePaymentRequest(Guid StudentId, Guid? InvoiceId, decimal Amount, PaymentMethod PaymentMethod, DateTime? PaymentDate, string? Notes);
-public sealed record BalanceListItemResponse(Guid StudentId, string StudentName, decimal TotalDebt, decimal Paid, decimal Remaining, DateTime? LastPaymentDate);
+public enum DebtStatus { None, Open, Overdue }
+public sealed record BalanceListItemResponse(Guid StudentId, string StudentName, decimal TotalDebt, decimal Paid, decimal Remaining, DateTime? LastPaymentDate, decimal OverdueBalance, int OpenInvoiceCount, int OverdueInvoiceCount, DebtStatus Status);
 public sealed record BalanceSummaryResponse(decimal OpenBalance, int DebtorCount, decimal CollectedThisMonth, decimal OverdueTotal);
 public sealed record BalancesResponse(BalanceSummaryResponse Summary, IReadOnlyCollection<BalanceListItemResponse> Items);
 public sealed record StudentMembershipOverviewResponse(Guid Id, Guid PlanId, string PlanName, DateOnly StartDate, DateOnly? EndDate, MembershipStatus Status, decimal Price, decimal? DiscountAmount, string? DiscountReason);
@@ -52,7 +53,7 @@ public interface IOperationsService
     Task<IReadOnlyCollection<PaymentListItemResponse>> GetPaymentsAsync(DateOnly? from, DateOnly? to, string? search, CancellationToken ct);
     Task<IReadOnlyCollection<InvoiceOptionResponse>> GetOpenInvoicesAsync(Guid studentId, CancellationToken ct);
     Task<PaymentListItemResponse> CreatePaymentAsync(CreatePaymentRequest request, string userId, CancellationToken ct);
-    Task<BalancesResponse> GetBalancesAsync(string? search, CancellationToken ct);
+    Task<BalancesResponse> GetBalancesAsync(string? search, bool overdueOnly, bool openOnly, bool includeSettled, CancellationToken ct);
     Task<StudentFinanceOverviewResponse?> GetStudentFinanceOverviewAsync(Guid studentId, CancellationToken ct);
     Task<ReportsResponse> GetReportsAsync(CancellationToken ct);
     Task<DashboardOperationsResponse> GetDashboardOperationsAsync(string? userId, bool instructorOnly, CancellationToken ct);

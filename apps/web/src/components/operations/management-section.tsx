@@ -23,6 +23,7 @@ import { toast } from "sonner";
 import { InstructorManagementDialog } from "@/components/classes/instructor-management-dialog";
 import { RoomManagementDialog } from "@/components/classes/room-management-dialog";
 import { AttendanceSection } from "@/components/operations/attendance-section";
+import { BalancesSection } from "@/components/operations/balances-section";
 import { ReportsSection } from "@/components/operations/reports-section";
 import {
   MembershipDialog,
@@ -169,7 +170,7 @@ export function ManagementSection({ section }: { section: Section }) {
         ) : section === "payments" ? (
           <Payments />
         ) : section === "balances" ? (
-          <Balances />
+          <BalancesSection />
         ) : section === "reports" ? (
           <ReportsSection />
         ) : section === "instructors" ? (
@@ -541,72 +542,6 @@ function PaymentRow({ item: x }: { item: Payment }) {
     </TableRow>
   );
 }
-function Balances() {
-  const [search, setSearch] = useState(""),
-    deferred = useDeferredValue(search);
-  const q = useQuery({
-    queryKey: operationKeys.section("balances", deferred),
-    queryFn: () => operationsApi.balances(deferred),
-  });
-  return (
-    <>
-      {q.data && (
-        <Metrics
-          items={[
-            ["Toplam açık bakiye", money(q.data.summary.openBalance)],
-            ["Borçlu öğrenci", String(q.data.summary.debtorCount)],
-            ["Bu ay tahsil", money(q.data.summary.collectedThisMonth)],
-            ["Geciken toplam", money(q.data.summary.overdueTotal)],
-          ]}
-        />
-      )}
-      <Toolbar
-        search={search}
-        setSearch={setSearch}
-        placeholder="Borçlu öğrenci ara..."
-      />
-      <Panel>
-        {q.isLoading ? (
-          <Loading />
-        ) : q.isError ? (
-          <ErrorState error={q.error} />
-        ) : q.data?.items.length === 0 ? (
-          <Empty
-            icon={<ReceiptText />}
-            title="Açık bakiye yok"
-            detail="Seçili aramada borçlu öğrenci bulunmuyor."
-          />
-        ) : (
-          <ResponsiveTable
-            headers={["Öğrenci", "Toplam borç", "Ödenen", "Kalan", "Son ödeme"]}
-          >
-            {q.data?.items.map((x) => (
-              <TableRow key={x.studentId}>
-                <TableCell>
-                  <Link
-                    href={studentDetailHref(x.studentId)}
-                    className="font-medium hover:underline"
-                  >
-                    {x.studentName}
-                  </Link>
-                </TableCell>
-                <TableCell>{money(x.totalDebt)}</TableCell>
-                <TableCell className="text-emerald-700">
-                  {money(x.paid)}
-                </TableCell>
-                <TableCell className="font-semibold text-rose-700">
-                  {money(x.remaining)}
-                </TableCell>
-                <TableCell>{date(x.lastPaymentDate)}</TableCell>
-              </TableRow>
-            ))}
-          </ResponsiveTable>
-        )}
-      </Panel>
-    </>
-  );
-}
-
 function Instructors() {
   const qc = useQueryClient(),
     [manage, setManage] = useState(false),
@@ -1064,15 +999,6 @@ function ResponsiveTable({
         </TableHeader>
         <TableBody>{children}</TableBody>
       </Table>
-    </div>
-  );
-}
-function Metrics({ items }: { items: [string, string][] }) {
-  return (
-    <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-6">
-      {items.map(([label, value]) => (
-        <Stat key={label} label={label} value={value} />
-      ))}
     </div>
   );
 }

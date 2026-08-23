@@ -84,7 +84,8 @@ public sealed class OperationsController(IOperationsService operations, UserMana
 
     [HttpGet("balances")]
     [Authorize(Policy = Policies.FinanceAccess)]
-    public async Task<ActionResult<BalancesResponse>> Balances([FromQuery] string? search, CancellationToken ct) => Ok(await operations.GetBalancesAsync(search, ct));
+    public async Task<ActionResult<BalancesResponse>> Balances([FromQuery] string? search, [FromQuery] bool overdueOnly = false, [FromQuery] bool openOnly = false, [FromQuery] bool includeSettled = false, CancellationToken ct = default) =>
+        Ok(await operations.GetBalancesAsync(search, overdueOnly, openOnly, includeSettled, ct));
 
     [HttpGet("students/{studentId:guid}/finance-overview")]
     [Authorize(Policy = Policies.FinanceAccess)]

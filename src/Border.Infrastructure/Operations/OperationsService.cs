@@ -73,13 +73,13 @@ internal sealed class OperationsService(BorderDbContext db) : IOperationsService
         var dailyRevenue = payments.GroupBy(x => DateOnly.FromDateTime(x.PaymentDate.AddHours(3))).ToDictionary(x => x.Key, x => x.Sum(p => p.Amount));
         var revenuePoints = Enumerable.Range(0, 30).Select(offset => thirtyDayStart.AddDays(offset)).Select(date => new ReportPointResponse(date.ToString("dd.MM"), dailyRevenue.GetValueOrDefault(date))).ToList();
         var monthStart = new DateOnly(today.Year, today.Month, 1); var monthlyRevenue = canViewFinance ? await db.Payments.AsNoTracking().Where(x => x.PaymentDate >= IstanbulStart(monthStart) && x.PaymentDate < endUtc).SumAsync(x => (decimal?)x.Amount, ct) ?? 0 : 0;
-        var invoiceRows = canViewFinance ? await db.Invoices.AsNoTracking().Where(x => x.Status != InvoiceStatus.Cancelled && !x.Student.IsDeleted).Select(x => new { x.StudentId, x.Amount, x.DueDate, Paid = db.Payments.Where(p => p.InvoiceId == x.Id).Sum(p => (decimal?)p.Amount) ?? 0 }).ToListAsync(ct) : [];
-        var outstandingBalance = invoiceRows.Sum(x => Math.Max(0, x.Amount - x.Paid));
+        var invoiceRows = canViewFinance ? await db.Invoices.AsNoTracking().Where(x => x.Status != InvoiceStatus.Cancelled && !x.Student.IsDeleted).Select(x => new { x.StudentId, x.Amount, x.DueDate, x.Status, Paid = db.Payments.Where(p => p.InvoiceId == x.Id).Sum(p => (decimal?)p.Amount) ?? 0 }).ToListAsync(ct) : [];
+        var outstandingBalance = invoiceRows.Sum(x => InvoiceBalanceRules.Remaining(x.Status, x.Amount, x.Paid));
         var alerts = new List<DashboardAlertResponse>();
         if (canViewFinance)
         {
-            var overdue = invoiceRows.Count(x => x.DueDate < today && x.Amount > x.Paid); if (overdue > 0) alerts.Add(new("OverdueInvoices", overdue, $"{overdue} gecikmiş ödeme", "/balances"));
-            var debtors = invoiceRows.Where(x => x.Amount > x.Paid).Select(x => x.StudentId).Distinct().Count(); if (debtors > 0) alerts.Add(new("OpenBalances", debtors, $"{debtors} öğrencinin açık bakiyesi var", "/balances"));
+            var overdue = invoiceRows.Count(x => x.DueDate < today && InvoiceBalanceRules.Remaining(x.Status, x.Amount, x.Paid) > 0); if (overdue > 0) alerts.Add(new("OverdueInvoices", overdue, $"{overdue} gecikmiş ödeme", "/balances"));
+            var debtors = invoiceRows.Where(x => InvoiceBalanceRules.Remaining(x.Status, x.Amount, x.Paid) > 0).Select(x => x.StudentId).Distinct().Count(); if (debtors > 0) alerts.Add(new("OpenBalances", debtors, $"{debtors} öğrencinin açık bakiyesi var", "/balances"));
             var expiring = await db.StudentMemberships.AsNoTracking().CountAsync(x => !x.Student.IsDeleted && x.Status == MembershipStatus.Active && x.EndDate >= today && x.EndDate <= today.AddDays(7), ct); if (expiring > 0) alerts.Add(new("ExpiringMemberships", expiring, $"{expiring} üyelik 7 gün içinde bitiyor", "/memberships"));
         }
         var missingQuery = db.LessonSessions.AsNoTracking().Where(x => !x.StudioClass.IsDeleted && x.Status == LessonSessionStatus.Scheduled && x.ScheduledEnd >= startUtc && x.ScheduledEnd < nowUtc && !db.Attendances.Any(a => a.LessonSessionId == x.Id));
@@ -189,10 +189,94 @@ internal sealed class OperationsService(BorderDbContext db) : IOperationsService
 
     public async Task<IReadOnlyCollection<PaymentListItemResponse>> GetPaymentsAsync(DateOnly? from, DateOnly? to, string? search, CancellationToken ct)
     { var q = db.Payments.AsNoTracking().Where(x => !x.Student.IsDeleted); if (from.HasValue) q = q.Where(x => x.PaymentDate >= IstanbulStart(from.Value)); if (to.HasValue) q = q.Where(x => x.PaymentDate < IstanbulStart(to.Value).AddDays(1)); if (!string.IsNullOrWhiteSpace(search)) { var s = search.Trim().ToLower(); q = q.Where(x => (x.Student.FirstName + " " + x.Student.LastName).ToLower().Contains(s)); } return await q.OrderByDescending(x => x.PaymentDate).Select(x => new PaymentListItemResponse(x.Id, x.StudentId, x.Student.FirstName + " " + x.Student.LastName, x.Amount, x.PaymentDate, x.PaymentMethod, x.InvoiceId, x.Invoice == null ? null : x.Invoice.Description, x.Notes)).ToListAsync(ct); }
-    public async Task<IReadOnlyCollection<InvoiceOptionResponse>> GetOpenInvoicesAsync(Guid studentId, CancellationToken ct) => await db.Invoices.AsNoTracking().Where(x => x.StudentId == studentId && x.Status != InvoiceStatus.Paid && x.Status != InvoiceStatus.Cancelled).OrderBy(x => x.DueDate).Select(x => new InvoiceOptionResponse(x.Id, x.Description, x.Amount, db.Payments.Where(p => p.InvoiceId == x.Id).Sum(p => (decimal?)p.Amount) ?? 0, x.Amount - (db.Payments.Where(p => p.InvoiceId == x.Id).Sum(p => (decimal?)p.Amount) ?? 0), x.DueDate)).Where(x => x.Remaining > 0).ToListAsync(ct);
+    public async Task<IReadOnlyCollection<InvoiceOptionResponse>> GetOpenInvoicesAsync(Guid studentId, CancellationToken ct)
+    {
+        var rows = await db.Invoices.AsNoTracking()
+            .Where(x => x.StudentId == studentId && x.Status != InvoiceStatus.Paid && x.Status != InvoiceStatus.Cancelled)
+            .OrderBy(x => x.DueDate)
+            .Select(x => new
+            {
+                x.Id,
+                x.Description,
+                x.Amount,
+                Paid = db.Payments.Where(payment => payment.InvoiceId == x.Id).Sum(payment => (decimal?)payment.Amount) ?? 0,
+                x.DueDate,
+                x.Status,
+            }).ToListAsync(ct);
+        return rows
+            .Select(x => new InvoiceOptionResponse(x.Id, x.Description, x.Amount, x.Paid, InvoiceBalanceRules.Remaining(x.Status, x.Amount, x.Paid), x.DueDate, x.Status))
+            .Where(x => x.Remaining > 0)
+            .ToList();
+    }
     public async Task<PaymentListItemResponse> CreatePaymentAsync(CreatePaymentRequest r, string userId, CancellationToken ct) { if (r.Amount <= 0) throw new InvalidOperationException("Ödeme tutarı sıfırdan büyük olmalıdır."); if (!await db.Students.AnyAsync(x => x.Id == r.StudentId && !x.IsDeleted, ct)) throw new InvalidOperationException("Öğrenci bulunamadı."); Invoice? invoice = null; if (r.InvoiceId.HasValue) { invoice = await db.Invoices.SingleOrDefaultAsync(x => x.Id == r.InvoiceId && x.StudentId == r.StudentId && x.Status != InvoiceStatus.Cancelled, ct) ?? throw new InvalidOperationException("Açık borç bulunamadı."); var paid = await db.Payments.Where(x => x.InvoiceId == invoice.Id).SumAsync(x => (decimal?)x.Amount, ct) ?? 0; if (paid + r.Amount > invoice.Amount) throw new InvalidOperationException("Ödeme açık borç tutarını aşamaz."); invoice.Status = paid + r.Amount == invoice.Amount ? InvoiceStatus.Paid : InvoiceStatus.PartiallyPaid; } var p = new Payment { StudentId = r.StudentId, InvoiceId = r.InvoiceId, Amount = r.Amount, PaymentMethod = r.PaymentMethod, PaymentDate = r.PaymentDate?.ToUniversalTime() ?? DateTime.UtcNow, Notes = Clean(r.Notes), ReceivedByUserId = userId }; db.Add(p); await db.SaveChangesAsync(ct); return (await GetPaymentsAsync(null, null, null, ct)).Single(x => x.Id == p.Id); }
 
-    public async Task<BalancesResponse> GetBalancesAsync(string? search, CancellationToken ct) { var students = db.Students.AsNoTracking().Where(x => !x.IsDeleted); if (!string.IsNullOrWhiteSpace(search)) { var s = search.Trim().ToLower(); students = students.Where(x => (x.FirstName + " " + x.LastName).ToLower().Contains(s)); } var items = await students.Select(x => new BalanceListItemResponse(x.Id, x.FirstName + " " + x.LastName, db.Invoices.Where(i => i.StudentId == x.Id && i.Status != InvoiceStatus.Cancelled).Sum(i => (decimal?)i.Amount) ?? 0, db.Payments.Where(p => p.StudentId == x.Id && p.InvoiceId != null).Sum(p => (decimal?)p.Amount) ?? 0, (db.Invoices.Where(i => i.StudentId == x.Id && i.Status != InvoiceStatus.Cancelled).Sum(i => (decimal?)i.Amount) ?? 0) - (db.Payments.Where(p => p.StudentId == x.Id && p.InvoiceId != null).Sum(p => (decimal?)p.Amount) ?? 0), db.Payments.Where(p => p.StudentId == x.Id).Max(p => (DateTime?)p.PaymentDate))).Where(x => x.Remaining > 0).OrderByDescending(x => x.Remaining).ToListAsync(ct); var month = new DateOnly(DateTime.UtcNow.AddHours(3).Year, DateTime.UtcNow.AddHours(3).Month, 1); var monthStart = IstanbulStart(month); var collected = await db.Payments.Where(x => x.PaymentDate >= monthStart).SumAsync(x => (decimal?)x.Amount, ct) ?? 0; var today = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(3)); var overdue = await db.Invoices.Where(x => x.DueDate < today && x.Status != InvoiceStatus.Paid && x.Status != InvoiceStatus.Cancelled).SumAsync(x => (decimal?)x.Amount, ct) ?? 0; var overduePaid = await db.Payments.Where(x => x.InvoiceId != null && x.Invoice!.DueDate < today && x.Invoice.Status != InvoiceStatus.Cancelled).SumAsync(x => (decimal?)x.Amount, ct) ?? 0; return new(new(items.Sum(x => x.Remaining), items.Count, collected, Math.Max(0, overdue - overduePaid)), items); }
+    public async Task<BalancesResponse> GetBalancesAsync(string? search, bool overdueOnly, bool openOnly, bool includeSettled, CancellationToken ct)
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(3));
+        var invoiceRows = await db.Invoices.AsNoTracking()
+            .Where(invoice => !invoice.Student.IsDeleted && invoice.Status != InvoiceStatus.Cancelled)
+            .Select(invoice => new
+            {
+                invoice.StudentId,
+                invoice.Amount,
+                invoice.DueDate,
+                invoice.Status,
+                Paid = db.Payments.Where(payment => payment.InvoiceId == invoice.Id).Sum(payment => (decimal?)payment.Amount) ?? 0m,
+            }).ToListAsync(ct);
+
+        var aggregates = invoiceRows
+            .GroupBy(x => x.StudentId)
+            .ToDictionary(
+                group => group.Key,
+                group =>
+                {
+                    var rows = group.Select(x => new
+                    {
+                        x.Amount,
+                        x.Paid,
+                        x.DueDate,
+                        Remaining = InvoiceBalanceRules.Remaining(x.Status, x.Amount, x.Paid),
+                    }).ToList();
+                    return new BalanceAggregate(
+                        rows.Sum(x => x.Amount),
+                        rows.Sum(x => x.Paid),
+                        rows.Sum(x => x.Remaining),
+                        rows.Where(x => x.DueDate < today).Sum(x => x.Remaining),
+                        rows.Count(x => x.Remaining > 0),
+                        rows.Count(x => x.DueDate < today && x.Remaining > 0));
+                });
+
+        var students = db.Students.AsNoTracking().Where(x => !x.IsDeleted);
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var normalizedSearch = search.Trim().ToLower();
+            students = students.Where(x => (x.FirstName + " " + x.LastName).ToLower().Contains(normalizedSearch));
+        }
+        var studentRows = await students
+            .OrderBy(x => x.FirstName).ThenBy(x => x.LastName)
+            .Select(x => new
+            {
+                x.Id,
+                Name = x.FirstName + " " + x.LastName,
+                LastPaymentDate = db.Payments.Where(payment => payment.StudentId == x.Id).Max(payment => (DateTime?)payment.PaymentDate),
+            }).ToListAsync(ct);
+
+        var items = studentRows.Select(student =>
+        {
+            var aggregate = aggregates.GetValueOrDefault(student.Id) ?? BalanceAggregate.Empty;
+            var status = aggregate.OverdueBalance > 0 ? DebtStatus.Overdue : aggregate.Remaining > 0 ? DebtStatus.Open : DebtStatus.None;
+            return new BalanceListItemResponse(student.Id, student.Name, aggregate.TotalDebt, aggregate.Paid, aggregate.Remaining, student.LastPaymentDate, aggregate.OverdueBalance, aggregate.OpenInvoiceCount, aggregate.OverdueInvoiceCount, status);
+        });
+        if (!includeSettled || openOnly) items = items.Where(x => x.Remaining > 0);
+        if (overdueOnly) items = items.Where(x => x.OverdueBalance > 0);
+        var result = items.OrderByDescending(x => x.OverdueBalance).ThenByDescending(x => x.Remaining).ThenBy(x => x.StudentName).ToList();
+
+        var monthStart = IstanbulStart(new DateOnly(today.Year, today.Month, 1));
+        var monthEnd = IstanbulStart(new DateOnly(today.Year, today.Month, 1).AddMonths(1));
+        var collected = await db.Payments.AsNoTracking().Where(x => !x.Student.IsDeleted && x.PaymentDate >= monthStart && x.PaymentDate < monthEnd).SumAsync(x => (decimal?)x.Amount, ct) ?? 0;
+        var summary = new BalanceSummaryResponse(aggregates.Values.Sum(x => x.Remaining), aggregates.Values.Count(x => x.Remaining > 0), collected, aggregates.Values.Sum(x => x.OverdueBalance));
+        return new(summary, result);
+    }
 
     public async Task<StudentFinanceOverviewResponse?> GetStudentFinanceOverviewAsync(Guid studentId, CancellationToken ct)
     {
@@ -210,18 +294,22 @@ internal sealed class OperationsService(BorderDbContext db) : IOperationsService
             .Select(x => new { Invoice = x, Paid = db.Payments.Where(p => p.InvoiceId == x.Id).Sum(p => (decimal?)p.Amount) ?? 0 })
             .ToListAsync(ct);
         var invoices = invoiceRows.OrderByDescending(x => x.Invoice.DueDate).Take(5)
-            .Select(x => new StudentInvoiceHistoryResponse(x.Invoice.Id, x.Invoice.Description, x.Invoice.Amount, x.Paid, Math.Max(0, x.Invoice.Amount - x.Paid), x.Invoice.DueDate, x.Invoice.Status)).ToList();
+            .Select(x => new StudentInvoiceHistoryResponse(x.Invoice.Id, x.Invoice.Description, x.Invoice.Amount, x.Paid, InvoiceBalanceRules.Remaining(x.Invoice.Status, x.Invoice.Amount, x.Paid), x.Invoice.DueDate, x.Invoice.Status)).ToList();
         var payments = await db.Payments.AsNoTracking().Where(x => x.StudentId == studentId).OrderByDescending(x => x.PaymentDate).Take(5)
             .Select(x => new StudentPaymentHistoryResponse(x.Id, x.InvoiceId, x.Invoice == null ? null : x.Invoice.Description, x.Amount, x.PaymentDate, x.PaymentMethod, x.Notes)).ToListAsync(ct);
         var totalInvoiced = invoiceRows.Sum(x => x.Invoice.Amount); var totalPaid = invoiceRows.Sum(x => x.Paid);
-        var openBalance = invoiceRows.Sum(x => Math.Max(0, x.Invoice.Amount - x.Paid));
-        var overdue = invoiceRows.Where(x => x.Invoice.DueDate < today).Sum(x => Math.Max(0, x.Invoice.Amount - x.Paid));
+        var openBalance = invoiceRows.Sum(x => InvoiceBalanceRules.Remaining(x.Invoice.Status, x.Invoice.Amount, x.Paid));
+        var overdue = invoiceRows.Where(x => x.Invoice.DueDate < today).Sum(x => InvoiceBalanceRules.Remaining(x.Invoice.Status, x.Invoice.Amount, x.Paid));
         return new(totalInvoiced, totalPaid, openBalance, overdue, memberships, invoices, payments);
     }
 
-    public async Task<ReportsResponse> GetReportsAsync(CancellationToken ct) { var balances = await GetBalancesAsync(null, ct); var activeStudents = await db.Students.CountAsync(x => !x.IsDeleted && x.Status == StudentStatus.Active, ct); var activeClasses = await db.StudioClasses.CountAsync(x => !x.IsDeleted && x.Status == StudioClassStatus.Active, ct); var occupancy = activeClasses == 0 ? 0 : await db.StudioClasses.Where(x => !x.IsDeleted && x.Status == StudioClassStatus.Active).AverageAsync(x => 100m * db.ClassEnrollments.Count(e => e.StudioClassId == x.Id && e.Status == EnrollmentStatus.Active) / x.Capacity, ct); var attendanceTotal = await db.Attendances.CountAsync(ct); var attendanceRate = attendanceTotal == 0 ? 0 : 100m * await db.Attendances.CountAsync(x => x.Status == AttendanceStatus.Present || x.Status == AttendanceStatus.Late, ct) / attendanceTotal; var now = DateTime.UtcNow.AddHours(3); var monthly = new List<ReportPointResponse>(); for (var i = 5; i >= 0; i--) { var local = new DateOnly(now.Year, now.Month, 1).AddMonths(-i); var start = IstanbulStart(local); var end = IstanbulStart(local.AddMonths(1)); monthly.Add(new(local.ToString("yyyy-MM"), await db.Payments.Where(x => x.PaymentDate >= start && x.PaymentDate < end).SumAsync(x => (decimal?)x.Amount, ct) ?? 0)); } var statuses = await db.Students.Where(x => !x.IsDeleted).GroupBy(x => x.Status).Select(x => new ReportPointResponse(x.Key.ToString(), x.Count())).ToListAsync(ct); var classes = await db.StudioClasses.Where(x => !x.IsDeleted && x.Status == StudioClassStatus.Active).OrderBy(x => x.Name).Select(x => new ReportPointResponse(x.Name, 100m * db.ClassEnrollments.Count(e => e.StudioClassId == x.Id && e.Status == EnrollmentStatus.Active) / x.Capacity)).ToListAsync(ct); return new(activeStudents, activeClasses, balances.Summary.CollectedThisMonth, balances.Summary.OpenBalance, Math.Round(occupancy, 1), Math.Round(attendanceRate, 1), monthly, statuses, classes); }
+    public async Task<ReportsResponse> GetReportsAsync(CancellationToken ct) { var balances = await GetBalancesAsync(null, false, false, false, ct); var activeStudents = await db.Students.CountAsync(x => !x.IsDeleted && x.Status == StudentStatus.Active, ct); var activeClasses = await db.StudioClasses.CountAsync(x => !x.IsDeleted && x.Status == StudioClassStatus.Active, ct); var occupancy = activeClasses == 0 ? 0 : await db.StudioClasses.Where(x => !x.IsDeleted && x.Status == StudioClassStatus.Active).AverageAsync(x => 100m * db.ClassEnrollments.Count(e => e.StudioClassId == x.Id && e.Status == EnrollmentStatus.Active) / x.Capacity, ct); var attendanceTotal = await db.Attendances.CountAsync(ct); var attendanceRate = attendanceTotal == 0 ? 0 : 100m * await db.Attendances.CountAsync(x => x.Status == AttendanceStatus.Present || x.Status == AttendanceStatus.Late, ct) / attendanceTotal; var now = DateTime.UtcNow.AddHours(3); var monthly = new List<ReportPointResponse>(); for (var i = 5; i >= 0; i--) { var local = new DateOnly(now.Year, now.Month, 1).AddMonths(-i); var start = IstanbulStart(local); var end = IstanbulStart(local.AddMonths(1)); monthly.Add(new(local.ToString("yyyy-MM"), await db.Payments.Where(x => x.PaymentDate >= start && x.PaymentDate < end).SumAsync(x => (decimal?)x.Amount, ct) ?? 0)); } var statuses = await db.Students.Where(x => !x.IsDeleted).GroupBy(x => x.Status).Select(x => new ReportPointResponse(x.Key.ToString(), x.Count())).ToListAsync(ct); var classes = await db.StudioClasses.Where(x => !x.IsDeleted && x.Status == StudioClassStatus.Active).OrderBy(x => x.Name).Select(x => new ReportPointResponse(x.Name, 100m * db.ClassEnrollments.Count(e => e.StudioClassId == x.Id && e.Status == EnrollmentStatus.Active) / x.Capacity)).ToListAsync(ct); return new(activeStudents, activeClasses, balances.Summary.CollectedThisMonth, balances.Summary.OpenBalance, Math.Round(occupancy, 1), Math.Round(attendanceRate, 1), monthly, statuses, classes); }
     public async Task<InstructorDetailResponse?> GetInstructorAsync(Guid id, CancellationToken ct) { var x = await db.Instructors.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id, ct); if (x is null) return null; var linked = x.UserId == null ? null : await db.Users.Where(u => u.Id == x.UserId).Select(u => u.DisplayName).SingleOrDefaultAsync(ct); var schedule = await GetScheduleAsync(null, id, null, null, ct); return new(x.Id, x.FirstName, x.LastName, x.Phone, x.Email, x.UserId, linked, x.IsDeleted, await db.StudioClasses.CountAsync(c => c.InstructorId == id && !c.IsDeleted && c.Status == StudioClassStatus.Active, ct), schedule); }
     private static MembershipPlanResponse Map(MembershipPlan x) => new(x.Id, x.Name, x.Type, x.DefaultPrice, x.LessonCount, x.DurationMonths, x.IsActive);
+    private sealed record BalanceAggregate(decimal TotalDebt, decimal Paid, decimal Remaining, decimal OverdueBalance, int OpenInvoiceCount, int OverdueInvoiceCount)
+    {
+        public static readonly BalanceAggregate Empty = new(0, 0, 0, 0, 0, 0);
+    }
     private static void ValidatePlan(MembershipPlanRequest r) { if (string.IsNullOrWhiteSpace(r.Name) || r.DefaultPrice < 0 || r.LessonCount < 0 || r.DurationMonths < 0) throw new InvalidOperationException("Üyelik planı alanları geçersiz."); }
     private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }
