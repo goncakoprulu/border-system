@@ -4,7 +4,7 @@ namespace Border.Application.Operations;
 
 public sealed record ScheduleItemResponse(Guid ClassId, string ClassName, string InstructorName, Guid InstructorId, string RoomName, Guid RoomId, DayOfWeek DayOfWeek, TimeOnly StartTime, TimeOnly EndTime, string? Level);
 public sealed record SessionListItemResponse(Guid Id, Guid ClassId, string ClassName, Guid InstructorId, string InstructorName, Guid RoomId, string RoomName, DateTime ScheduledStart, DateTime ScheduledEnd, int StudentCount, int RecordedCount, bool IsCompleted);
-public sealed record AttendanceStudentResponse(Guid StudentId, string StudentName, AttendanceStatus? Status, string? Notes);
+public sealed record AttendanceStudentResponse(Guid StudentId, string StudentName, AttendanceStatus? Status, string? Notes, string? StudentNotes, int RecentSessionCount, int RecentAbsenceCount);
 public sealed record AttendanceDetailResponse(SessionListItemResponse Session, IReadOnlyCollection<AttendanceStudentResponse> Students);
 public sealed record AttendanceEntryRequest(Guid StudentId, AttendanceStatus Status, string? Notes);
 public sealed record SaveAttendanceRequest(IReadOnlyCollection<AttendanceEntryRequest> Entries);
@@ -13,6 +13,7 @@ public sealed record StudentAttendanceHistoryResponse(int Total, int Present, in
 
 public sealed record MembershipListItemResponse(Guid Id, Guid StudentId, string StudentName, Guid PlanId, string PlanName, MembershipPlanType PlanType, DateOnly StartDate, DateOnly? EndDate, MembershipStatus Status, decimal Price, int? RemainingLessons);
 public sealed record CreateMembershipRequest(Guid StudentId, Guid PlanId, DateOnly StartDate, DateOnly? EndDate, decimal? Price, decimal? DiscountAmount, string? DiscountReason);
+public sealed record ChangeMembershipStatusRequest(MembershipStatus Status, DateOnly? EndDate = null);
 public sealed record MembershipPlanResponse(Guid Id, string Name, MembershipPlanType Type, decimal DefaultPrice, int? LessonCount, int? DurationMonths, bool IsActive);
 public sealed record MembershipPlanRequest(string Name, MembershipPlanType Type, decimal DefaultPrice, int? LessonCount, int? DurationMonths, bool IsActive = true);
 
@@ -37,6 +38,8 @@ public sealed record DashboardAnalyticsResponse(bool CanViewFinance, decimal Mon
 public sealed record InstructorDetailResponse(Guid Id, string FirstName, string LastName, string? Phone, string? Email, string? UserId, string? LinkedUserName, bool IsArchived, int ActiveClassCount, IReadOnlyCollection<ScheduleItemResponse> Schedule);
 public sealed record UserResponse(string Id, string DisplayName, string Email, IReadOnlyCollection<string> Roles, bool IsActive);
 public sealed record UpdateUserRequest(string DisplayName, bool IsActive, IReadOnlyCollection<string> Roles);
+public sealed record GlobalSearchItemResponse(string Type, string Id, string Label, string? Detail, string Href);
+public sealed record GlobalSearchResponse(IReadOnlyCollection<GlobalSearchItemResponse> Items);
 
 public interface IOperationsService
 {
@@ -47,6 +50,7 @@ public interface IOperationsService
     Task<StudentAttendanceHistoryResponse?> GetStudentAttendanceHistoryAsync(Guid studentId, CancellationToken ct);
     Task<IReadOnlyCollection<MembershipListItemResponse>> GetMembershipsAsync(string? search, MembershipStatus? status, CancellationToken ct);
     Task<MembershipListItemResponse> CreateMembershipAsync(CreateMembershipRequest request, string userId, CancellationToken ct);
+    Task<MembershipListItemResponse?> ChangeMembershipStatusAsync(Guid id, ChangeMembershipStatusRequest request, string userId, CancellationToken ct);
     Task<IReadOnlyCollection<MembershipPlanResponse>> GetPlansAsync(bool activeOnly, CancellationToken ct);
     Task<MembershipPlanResponse> CreatePlanAsync(MembershipPlanRequest request, CancellationToken ct);
     Task<MembershipPlanResponse?> UpdatePlanAsync(Guid id, MembershipPlanRequest request, CancellationToken ct);
@@ -59,4 +63,5 @@ public interface IOperationsService
     Task<DashboardOperationsResponse> GetDashboardOperationsAsync(string? userId, bool instructorOnly, CancellationToken ct);
     Task<DashboardAnalyticsResponse> GetDashboardAnalyticsAsync(string? userId, bool instructorOnly, bool canViewFinance, CancellationToken ct);
     Task<InstructorDetailResponse?> GetInstructorAsync(Guid id, CancellationToken ct);
+    Task<GlobalSearchResponse> SearchAsync(string query, string? userId, bool instructorOnly, CancellationToken ct);
 }

@@ -91,6 +91,8 @@ export function MembershipDialog({
             startDate: form.get("startDate"),
             endDate: form.get("endDate") || null,
             price: form.get("price") ? Number(form.get("price")) : null,
+            discountAmount: form.get("discountAmount") ? Number(form.get("discountAmount")) : null,
+            discountReason: form.get("discountReason") || null,
           });
         }}
         className="space-y-4"
@@ -135,6 +137,14 @@ export function MembershipDialog({
         <Field label="Özel ücret">
           <Input name="price" type="number" min="0" step="0.01" />
         </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="İndirim">
+            <Input name="discountAmount" type="number" min="0" step="0.01" />
+          </Field>
+          <Field label="İndirim nedeni">
+            <Input name="discountReason" maxLength={500} />
+          </Field>
+        </div>
         {loadError && <ErrorMessage error={loadError} />}{" "}
         {mutation.isError && <ErrorMessage error={mutation.error} />}
         <Button
@@ -192,6 +202,8 @@ export function PaymentDialog({
   });
   const loadError = students.error ?? invoices.error;
   const preferredInvoice = invoices.data?.[0]?.id ?? "";
+  const openTotal = invoices.data?.reduce((sum, invoice) => sum + invoice.remaining, 0) ?? 0;
+  const overdueTotal = invoices.data?.filter((invoice) => invoice.dueDate < today()).reduce((sum, invoice) => sum + invoice.remaining, 0) ?? 0;
   return (
     <FormDialog
       open={open}
@@ -260,6 +272,7 @@ export function PaymentDialog({
               </p>
             )}
         </Field>
+        {selectedStudentId && invoices.data && <div className="grid grid-cols-2 gap-3 rounded-lg bg-zinc-50 p-3 text-sm"><div><p className="text-xs text-zinc-500">Toplam açık</p><p className="mt-1 font-semibold">{money(openTotal)}</p></div><div><p className="text-xs text-zinc-500">Gecikmiş</p><p className={`mt-1 font-semibold ${overdueTotal>0?"text-red-700":""}`}>{money(overdueTotal)}</p></div></div>}
         <Field label="3. Tutar">
           <Input name="amount" type="number" min="0.01" step="0.01" required />
         </Field>

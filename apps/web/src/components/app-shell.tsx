@@ -9,6 +9,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { GlobalSearch } from "@/components/global-search";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -93,7 +94,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <Sheet open={mobileOpen} onOpenChange={setMobileOpen}><SheetTrigger render={<Button variant="ghost" size="icon" aria-label="Menüyü aç" />}><Menu /></SheetTrigger><SheetContent side="left" className="w-[286px] p-0"><SheetTitle className="sr-only">Ana menü</SheetTitle>{sidebar}</SheetContent></Sheet>
           <Brand />
         </div>
-        <div className="hidden lg:block"><p className="text-sm font-medium">BORDER Yönetim Sistemi</p><p className="text-xs text-zinc-400">Europe/Istanbul</p></div>
+        <GlobalSearch />
         <div className="flex items-center gap-3"><div className="hidden text-right sm:block"><p className="text-sm font-medium">{user.displayName}</p><p className="text-xs text-zinc-400">{user.roles[0]}</p></div><Avatar className="size-9"><AvatarFallback className="bg-[#20241f] text-xs text-white">{user.displayName.slice(0, 2).toUpperCase()}</AvatarFallback></Avatar></div>
       </header>
       <main className="p-4 sm:p-7 lg:p-9">{children}</main>

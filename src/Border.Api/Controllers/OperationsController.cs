@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Border.Application.Auditing;
 using Border.Application.Auth;
 using Border.Application.Operations;
 using Border.Domain.Entities;
@@ -11,7 +12,7 @@ namespace Border.Api.Controllers;
 
 [ApiController]
 [Route("api")]
-public sealed class OperationsController(IOperationsService operations, UserManager<AppUser> userManager) : ControllerBase
+public sealed class OperationsController(IOperationsService operations, UserManager<AppUser> userManager, IAuditWriter auditWriter) : ControllerBase
 {
     [HttpGet("dashboard/operations")]
     [Authorize(Policy = Policies.OperationsAccess)]
@@ -55,6 +56,11 @@ public sealed class OperationsController(IOperationsService operations, UserMana
     public async Task<ActionResult<MembershipListItemResponse>> CreateMembership(CreateMembershipRequest request, CancellationToken ct)
     { try { var result = await operations.CreateMembershipAsync(request, UserId()!, ct); return Created($"/api/memberships/{result.Id}", result); } catch (InvalidOperationException ex) { return Validation(ex.Message); } }
 
+    [HttpPatch("memberships/{id:guid}/status")]
+    [Authorize(Policy = Policies.FinanceAccess)]
+    public async Task<ActionResult<MembershipListItemResponse>> ChangeMembershipStatus(Guid id, ChangeMembershipStatusRequest request, CancellationToken ct)
+    { try { var result = await operations.ChangeMembershipStatusAsync(id, request, UserId()!, ct); return result is null ? NotFound() : Ok(result); } catch (InvalidOperationException ex) { return Validation(ex.Message); } }
+
     [HttpGet("membership-plans")]
     [Authorize(Policy = Policies.FinanceAccess)]
     public async Task<ActionResult<IReadOnlyCollection<MembershipPlanResponse>>> Plans([FromQuery] bool activeOnly = true, CancellationToken ct = default) => Ok(await operations.GetPlansAsync(activeOnly, ct));
@@ -96,6 +102,11 @@ public sealed class OperationsController(IOperationsService operations, UserMana
     [Authorize(Policy = Policies.ReportsAccess)]
     public async Task<ActionResult<ReportsResponse>> Reports(CancellationToken ct) => Ok(await operations.GetReportsAsync(ct));
 
+    [HttpGet("search")]
+    [Authorize(Policy = Policies.OperationsAccess)]
+    public async Task<ActionResult<GlobalSearchResponse>> Search([FromQuery] string? q, CancellationToken ct) =>
+        Ok(await operations.SearchAsync(q ?? string.Empty, UserId(), InstructorOnly(), ct));
+
     [HttpGet("instructors/{id:guid}")]
     [Authorize(Roles = Roles.Admin + "," + Roles.Management)]
     public async Task<ActionResult<InstructorDetailResponse>> Instructor(Guid id, CancellationToken ct) { var result = await operations.GetInstructorAsync(id, ct); return result is null ? NotFound() : Ok(result); }
@@ -111,8 +122,10 @@ public sealed class OperationsController(IOperationsService operations, UserMana
     {
         var user = await userManager.FindByIdAsync(id); if (user is null) return NotFound();
         var roles = request.Roles.Distinct().ToArray(); if (roles.Any(x => !Roles.All.Contains(x))) return Validation("Geçersiz rol seçildi."); if (string.IsNullOrWhiteSpace(request.DisplayName)) return Validation("Ad zorunludur.");
+        var current = await userManager.GetRolesAsync(user); var old = new { user.DisplayName, user.IsActive, Roles = current };
         user.DisplayName = request.DisplayName.Trim(); user.IsActive = request.IsActive; var update = await userManager.UpdateAsync(user); if (!update.Succeeded) return Validation(string.Join(" ", update.Errors.Select(x => x.Description)));
-        var current = await userManager.GetRolesAsync(user); await userManager.RemoveFromRolesAsync(user, current.Except(roles)); await userManager.AddToRolesAsync(user, roles.Except(current));
+        await userManager.RemoveFromRolesAsync(user, current.Except(roles)); await userManager.AddToRolesAsync(user, roles.Except(current));
+        await auditWriter.WriteAsync("UserAccessUpdated", nameof(AppUser), user.Id, old, new { user.DisplayName, user.IsActive, Roles = roles });
         return Ok(new UserResponse(user.Id, user.DisplayName, user.Email ?? "", (await userManager.GetRolesAsync(user)).ToArray(), user.IsActive));
     }
 

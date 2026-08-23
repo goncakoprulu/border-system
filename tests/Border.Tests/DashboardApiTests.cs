@@ -5,6 +5,7 @@ using Border.Application.Operations;
 using Border.Domain.Entities;
 using Border.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Border.Tests;
@@ -55,6 +56,39 @@ public sealed class DashboardApiTests(StudentApiFactory factory) : IClassFixture
         Assert.False(analytics!.CanViewFinance); Assert.Equal(0m, analytics.MonthlyRevenue); Assert.Equal(0m, analytics.OutstandingBalance); Assert.Equal(0, analytics.ActiveMemberships);
         Assert.DoesNotContain(analytics.Alerts, x => x.Type is "OverdueInvoices" or "OpenBalances" or "ExpiringMemberships");
         using var member = Client("Member"); Assert.Equal(HttpStatusCode.Forbidden, (await member.GetAsync("/api/dashboard/operations")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Dashboard_SurfacesEmptyClassLowAttendanceAndUnassignedStudentRisks()
+    {
+        await factory.ResetAsync(); var seed = await SeedOperationalDashboardAsync();
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<BorderDbContext>();
+            var mainClass = await db.StudioClasses.SingleAsync(x => x.Id == seed.ClassId);
+            var student = await db.Students.FirstAsync(x => x.FirstName == "Öğrenci 1");
+            db.Students.Add(new Student { FirstName = "Sınıfsız", LastName = "Öğrenci", Status = StudentStatus.Active, RegistrationDate = seed.Today });
+            db.StudioClasses.Add(new StudioClass { Name = "Boş Sınıf", InstructorId = mainClass.InstructorId, StudioRoomId = mainClass.StudioRoomId, Capacity = 8, Status = StudioClassStatus.Active, StartDate = seed.Today.AddDays(-1) });
+            foreach (var index in Enumerable.Range(3, 3))
+            {
+                var session = new LessonSession { StudioClassId = mainClass.Id, InstructorId = mainClass.InstructorId, StudioRoomId = mainClass.StudioRoomId, ScheduledStart = IstanbulStart(seed.Today.AddDays(-index)).AddHours(10), ScheduledEnd = IstanbulStart(seed.Today.AddDays(-index)).AddHours(11), Status = LessonSessionStatus.Completed };
+                db.LessonSessions.Add(session);
+                db.Attendances.Add(new Attendance { LessonSession = session, Student = student, Status = index <= 4 ? AttendanceStatus.Absent : AttendanceStatus.Present, RecordedByUserId = "test-user" });
+            }
+            await db.SaveChangesAsync();
+        }
+
+        using var management = Client("Management");
+        var analytics = await management.GetFromJsonAsync<DashboardAnalyticsResponse>("/api/dashboard/analytics", JsonOptions);
+        Assert.Contains(analytics!.Alerts, x => x.Type == "EmptyClasses" && x.Count == 1);
+        Assert.Contains(analytics.Alerts, x => x.Type == "LowAttendance" && x.Count == 1);
+        Assert.Contains(analytics.Alerts, x => x.Type == "UnassignedStudents" && x.Count == 1);
+
+        using var instructor = Client("Instructor", "dashboard-instructor");
+        var scoped = await instructor.GetFromJsonAsync<DashboardAnalyticsResponse>("/api/dashboard/analytics", JsonOptions);
+        Assert.Contains(scoped!.Alerts, x => x.Type == "EmptyClasses" && x.Count == 1);
+        Assert.Contains(scoped.Alerts, x => x.Type == "LowAttendance" && x.Count == 1);
+        Assert.DoesNotContain(scoped.Alerts, x => x.Type == "UnassignedStudents");
     }
 
     private async Task<Seed> SeedOperationalDashboardAsync()

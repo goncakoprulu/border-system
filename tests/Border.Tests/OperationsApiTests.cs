@@ -126,11 +126,98 @@ public sealed class OperationsApiTests(StudentApiFactory factory) : IClassFixtur
         Assert.Equal(HttpStatusCode.Forbidden, (await instructor.GetAsync($"/api/students/{seed.StudentId}/finance-overview")).StatusCode);
     }
 
+    [Fact]
+    public async Task Memberships_RejectOverlap_AndSupportFreezeReactivateCancelWithoutLosingFinance()
+    {
+        await factory.ResetAsync(); var seed = await SeedAsync(); using var client = Client("Reception");
+        var today = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(3));
+        var createdResponse = await Mutation(client, HttpMethod.Post, "/api/memberships", new CreateMembershipRequest(seed.StudentId, seed.PlanId, today, today.AddMonths(1), 900m, 100m, "Sadakat indirimi"));
+        createdResponse.EnsureSuccessStatusCode();
+        var created = await createdResponse.Content.ReadFromJsonAsync<MembershipListItemResponse>(JsonOptions);
+
+        var overlap = await Mutation(client, HttpMethod.Post, "/api/memberships", new CreateMembershipRequest(seed.StudentId, seed.PlanId, today.AddDays(1), today.AddMonths(2), null, null, null));
+        Assert.Equal(HttpStatusCode.BadRequest, overlap.StatusCode);
+
+        var frozenResponse = await Mutation(client, HttpMethod.Patch, $"/api/memberships/{created!.Id}/status", new ChangeMembershipStatusRequest(MembershipStatus.Frozen));
+        frozenResponse.EnsureSuccessStatusCode();
+        Assert.Equal(MembershipStatus.Frozen, (await frozenResponse.Content.ReadFromJsonAsync<MembershipListItemResponse>(JsonOptions))!.Status);
+
+        var activeResponse = await Mutation(client, HttpMethod.Patch, $"/api/memberships/{created.Id}/status", new ChangeMembershipStatusRequest(MembershipStatus.Active));
+        activeResponse.EnsureSuccessStatusCode();
+        Assert.Equal(MembershipStatus.Active, (await activeResponse.Content.ReadFromJsonAsync<MembershipListItemResponse>(JsonOptions))!.Status);
+
+        var cancelledResponse = await Mutation(client, HttpMethod.Patch, $"/api/memberships/{created.Id}/status", new ChangeMembershipStatusRequest(MembershipStatus.Cancelled));
+        cancelledResponse.EnsureSuccessStatusCode();
+        Assert.Equal(MembershipStatus.Cancelled, (await cancelledResponse.Content.ReadFromJsonAsync<MembershipListItemResponse>(JsonOptions))!.Status);
+        var finance = await client.GetFromJsonAsync<StudentFinanceOverviewResponse>($"/api/students/{seed.StudentId}/finance-overview", JsonOptions);
+        Assert.Single(finance!.Invoices); Assert.Equal(800m, finance.OpenBalance);
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<BorderDbContext>(); var membership = await db.StudentMemberships.SingleAsync(x => x.Id == created.Id);
+            membership.Status = MembershipStatus.Active; membership.StartDate = today.AddMonths(-1); membership.EndDate = today.AddDays(-1); await db.SaveChangesAsync();
+        }
+        var expired = await client.GetFromJsonAsync<IReadOnlyCollection<MembershipListItemResponse>>("/api/memberships?status=Expired", JsonOptions);
+        Assert.Equal(MembershipStatus.Expired, Assert.Single(expired!).Status);
+    }
+
+    [Fact]
+    public async Task AttendanceDetail_ReturnsStudentNotesAndLastFourAbsenceSignal()
+    {
+        await factory.ResetAsync(); var seed = await SeedAsync();
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<BorderDbContext>();
+            var student = await db.Students.SingleAsync(x => x.Id == seed.StudentId); student.Notes = "Diz hassasiyeti var.";
+            var baseSession = await db.LessonSessions.SingleAsync(x => x.Id == seed.SessionId);
+            foreach (var index in Enumerable.Range(1, 3))
+            {
+                var session = new LessonSession { StudioClassId = seed.ClassId, InstructorId = seed.InstructorId, StudioRoomId = seed.RoomId, ScheduledStart = baseSession.ScheduledStart.AddDays(-index), ScheduledEnd = baseSession.ScheduledEnd.AddDays(-index), Status = LessonSessionStatus.Completed };
+                db.LessonSessions.Add(session);
+                db.Attendances.Add(new Attendance { LessonSession = session, StudentId = seed.StudentId, Status = index <= 2 ? AttendanceStatus.Absent : AttendanceStatus.Present, RecordedByUserId = "test-user" });
+            }
+            await db.SaveChangesAsync();
+            Assert.Equal(3, await db.Attendances.CountAsync(x => x.StudentId == seed.StudentId && x.LessonSessionId != seed.SessionId));
+        }
+        using var client = Client("Instructor", "instructor-user");
+        var detail = await client.GetFromJsonAsync<AttendanceDetailResponse>($"/api/attendance/sessions/{seed.SessionId}", JsonOptions);
+        var studentRow = Assert.Single(detail!.Students);
+        Assert.Equal("Diz hassasiyeti var.", studentRow.StudentNotes);
+        Assert.Equal(3, studentRow.RecentSessionCount);
+        Assert.Equal(2, studentRow.RecentAbsenceCount);
+    }
+
+    [Fact]
+    public async Task GlobalSearch_FindsOperationalRecords_AndScopesInstructorStudents()
+    {
+        await factory.ResetAsync(); await SeedAsync();
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<BorderDbContext>();
+            var otherInstructor = new Instructor { FirstName = "Başka", LastName = "Eğitmen", UserId = "other-user" };
+            var otherRoom = new StudioRoom { Name = "Gizli Salon", Capacity = 10 };
+            var otherStudent = new Student { FirstName = "Gizli", LastName = "Öğrenci", Status = StudentStatus.Active, RegistrationDate = new(2026, 1, 1) };
+            var otherClass = new StudioClass { Name = "Gizli Ders", Instructor = otherInstructor, StudioRoom = otherRoom, Capacity = 10, Status = StudioClassStatus.Active, StartDate = new(2026, 1, 1) };
+            db.AddRange(otherInstructor, otherRoom, otherStudent, otherClass, new ClassEnrollment { StudioClass = otherClass, Student = otherStudent, StartDate = new(2026, 1, 1), Status = EnrollmentStatus.Active }); await db.SaveChangesAsync();
+        }
+        using var management = Client("Management");
+        var managementResult = await management.GetFromJsonAsync<GlobalSearchResponse>("/api/search?q=Gizli", JsonOptions);
+        Assert.Contains(managementResult!.Items, x => x.Type == "Student" && x.Label == "Gizli Öğrenci");
+        Assert.Contains(managementResult.Items, x => x.Type == "Class" && x.Label == "Gizli Ders");
+
+        using var instructor = Client("Instructor", "instructor-user");
+        var own = await instructor.GetFromJsonAsync<GlobalSearchResponse>("/api/search?q=Duru", JsonOptions);
+        Assert.Contains(own!.Items, x => x.Type == "Student" && x.Label == "Duru Ak");
+        var hidden = await instructor.GetFromJsonAsync<GlobalSearchResponse>("/api/search?q=Gizli", JsonOptions);
+        Assert.Empty(hidden!.Items);
+    }
+
     [Theory]
     [InlineData("Instructor", "/api/payments", HttpStatusCode.Forbidden)]
     [InlineData("Reception", "/api/reports", HttpStatusCode.Forbidden)]
     [InlineData("Management", "/api/users", HttpStatusCode.Forbidden)]
     [InlineData("Member", "/api/attendance/sessions", HttpStatusCode.Forbidden)]
+    [InlineData("Member", "/api/search?q=Duru", HttpStatusCode.Forbidden)]
+    [InlineData("Instructor", "/api/memberships", HttpStatusCode.Forbidden)]
     [InlineData("Admin", "/api/users", HttpStatusCode.OK)]
     public async Task SensitiveModules_EnforceExistingRoles(string role, string path, HttpStatusCode expected)
     { await factory.ResetAsync(); using var client = Client(role); Assert.Equal(expected, (await client.GetAsync(path)).StatusCode); }

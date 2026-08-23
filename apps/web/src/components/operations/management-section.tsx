@@ -370,6 +370,11 @@ function Memberships() {
     queryKey: operationKeys.section("memberships", p.toString()),
     queryFn: () => operationsApi.memberships(p.toString()),
   });
+  const transition = useMutation({
+    mutationFn: ({ id, next }: { id: string; next: string }) => operationsApi.changeMembershipStatus(id, { status: next }),
+    onSuccess: async () => { await qc.invalidateQueries({ queryKey: ["operations"] }); toast.success("Üyelik durumu güncellendi."); },
+    onError: (error) => toast.error(formErrorMessage(error, "Üyelik durumu güncellenirken beklenmeyen bir hata oluştu.")),
+  });
   return (
     <>
       <Toolbar
@@ -414,10 +419,11 @@ function Memberships() {
               "Durum",
               "Ücret",
               "Kalan",
+              "İşlem",
             ]}
           >
             {q.data?.map((x) => (
-              <MembershipRow key={x.id} item={x} />
+              <MembershipRow key={x.id} item={x} pending={transition.isPending && transition.variables?.id === x.id} onStatus={(next) => transition.mutate({ id: x.id, next })} />
             ))}
           </ResponsiveTable>
         )}
@@ -430,7 +436,8 @@ function Memberships() {
     </>
   );
 }
-function MembershipRow({ item: x }: { item: Membership }) {
+const membershipStatusLabels: Record<string,string> = { Active:"Aktif", Frozen:"Donmuş", Expired:"Süresi dolmuş", Cancelled:"İptal" };
+function MembershipRow({ item: x, pending, onStatus }: { item: Membership; pending:boolean; onStatus:(status:string)=>void }) {
   return (
     <TableRow>
       <TableCell>
@@ -445,10 +452,16 @@ function MembershipRow({ item: x }: { item: Membership }) {
       <TableCell>{date(x.startDate)}</TableCell>
       <TableCell>{date(x.endDate)}</TableCell>
       <TableCell>
-        <Tag>{x.status}</Tag>
+        <Tag>{membershipStatusLabels[x.status] ?? "Bilinmeyen durum"}</Tag>
       </TableCell>
       <TableCell>{money(x.price)}</TableCell>
       <TableCell>{x.remainingLessons ?? "—"}</TableCell>
+      <TableCell><div className="flex flex-wrap gap-1">
+        {x.status === "Active" && <Button size="sm" variant="outline" disabled={pending} onClick={() => onStatus("Frozen")}>Dondur</Button>}
+        {x.status === "Frozen" && <Button size="sm" variant="outline" disabled={pending} onClick={() => onStatus("Active")}>Aktifleştir</Button>}
+        {(x.status === "Active" || x.status === "Frozen") && <Button size="sm" variant="ghost" className="text-red-700" disabled={pending} onClick={() => { if (globalThis.confirm(`${x.studentName} üyeliği iptal edilsin mi? Finans geçmişi korunacaktır.`)) onStatus("Cancelled"); }}>İptal</Button>}
+        {(x.status === "Expired" || x.status === "Cancelled") && <span className="text-xs text-zinc-400">İşlem yok</span>}
+      </div></TableCell>
     </TableRow>
   );
 }

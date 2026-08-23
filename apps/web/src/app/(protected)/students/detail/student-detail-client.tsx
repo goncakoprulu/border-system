@@ -95,6 +95,8 @@ const paymentLabels: Record<string, string> = {
   BankTransfer: "Havale",
   Other: "Diğer",
 };
+const membershipLabels: Record<string,string> = { Active:"Aktif", Frozen:"Donmuş", Expired:"Süresi dolmuş", Cancelled:"İptal" };
+const invoiceLabels: Record<string,string> = { Pending:"Bekliyor", PartiallyPaid:"Kısmi ödendi", Paid:"Ödendi", Cancelled:"İptal" };
 
 export function StudentDetailClient() {
   const id = useSearchParams().get("id");
@@ -728,7 +730,7 @@ function FinanceSection({
                   className="flex flex-wrap justify-between gap-2 rounded-lg bg-zinc-50 p-3 text-sm"
                 >
                   <span>
-                    <b>{x.planName}</b> · {x.status}
+                    <b>{x.planName}</b> · {membershipLabels[x.status] ?? "Bilinmeyen durum"}
                   </span>
                   <span>
                     {money(x.price)}
@@ -751,7 +753,7 @@ function FinanceSection({
                     <b>{money(x.remaining)} açık</b>
                   </div>
                   <p className="text-xs text-zinc-500">
-                    Vade {formatDate(x.dueDate)} · {x.status}
+                    Vade {formatDate(x.dueDate)} · {invoiceLabels[x.status] ?? "Bilinmeyen durum"}
                   </p>
                 </div>
               ))}

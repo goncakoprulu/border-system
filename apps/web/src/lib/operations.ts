@@ -3,7 +3,7 @@ import { apiMutation, apiQuery } from "@/lib/api";
 export type ScheduleItem = { classId:string; className:string; instructorName:string; instructorId:string; roomName:string; roomId:string; dayOfWeek:number; startTime:string; endTime:string; level:string|null };
 export type Session = { id:string; classId:string; className:string; instructorId:string; instructorName:string; roomId:string; roomName:string; scheduledStart:string; scheduledEnd:string; studentCount:number; recordedCount:number; isCompleted:boolean };
 export type AttendanceStatus = "Present"|"Absent"|"Excused"|"Late"|"MakeUp";
-export type AttendanceStudent = { studentId:string; studentName:string; status:AttendanceStatus|null; notes:string|null };
+export type AttendanceStudent = { studentId:string; studentName:string; status:AttendanceStatus|null; notes:string|null; studentNotes:string|null; recentSessionCount:number; recentAbsenceCount:number };
 export type AttendanceDetail = { session:Session; students:AttendanceStudent[] };
 export type StudentAttendanceHistory = { total:number; present:number; absent:number; excused:number; late:number; makeUp:number; attendanceRate:number; items:{attendanceId:string;sessionId:string;classId:string;className:string;scheduledStart:string;status:AttendanceStatus;notes:string|null}[] };
 export type Membership = { id:string; studentId:string; studentName:string; planId:string; planName:string; planType:string; startDate:string; endDate:string|null; status:string; price:number; remainingLessons:number|null };
@@ -21,6 +21,8 @@ export type DashboardOperations = { activeStudentCount:number; todayLessonCount:
 export type DashboardAnalytics = { canViewFinance:boolean; monthlyRevenue:number; outstandingBalance:number; attendanceRate:number; newStudents:number; totalPayments:number; activeMemberships:number; alerts:{type:string;count:number;label:string;href:string}[]; thirtyDayRevenue:{label:string;value:number}[] };
 export type InstructorDetail = { id:string; firstName:string; lastName:string; phone:string|null; email:string|null; userId:string|null; linkedUserName:string|null; isArchived:boolean; activeClassCount:number; schedule:ScheduleItem[] };
 export type UserRecord = { id:string; displayName:string; email:string; roles:string[]; isActive:boolean };
+export type GlobalSearchItem = { type:"Student"|"Class"|"Instructor"; id:string; label:string; detail:string|null; href:string };
+export type GlobalSearchResponse = { items:GlobalSearchItem[] };
 
 export const operationKeys = { section:(name:string, suffix="") => ["operations",name,suffix] as const };
 export const operationsApi = {
@@ -33,6 +35,7 @@ export const operationsApi = {
   studentAttendance:(studentId:string) => apiQuery<StudentAttendanceHistory>(`/api/students/${studentId}/attendance-history`),
   memberships:(params="") => apiQuery<Membership[]>(`/api/memberships${params ? `?${params}` : ""}`),
   createMembership:(input:unknown) => apiMutation<Membership>("/api/memberships","POST",input),
+  changeMembershipStatus:(id:string,input:{status:string;endDate?:string|null}) => apiMutation<Membership>(`/api/memberships/${id}/status`,"PATCH",input),
   plans:(activeOnly=true) => apiQuery<Plan[]>(`/api/membership-plans?activeOnly=${activeOnly}`),
   createPlan:(input:unknown) => apiMutation<Plan>("/api/membership-plans","POST",input),
   updatePlan:(id:string,input:unknown) => apiMutation<Plan>(`/api/membership-plans/${id}`,"PUT",input),
@@ -53,4 +56,5 @@ export const operationsApi = {
   instructor:(id:string) => apiQuery<InstructorDetail>(`/api/instructors/${id}`),
   users:() => apiQuery<UserRecord[]>("/api/users"),
   updateUser:(id:string,input:unknown) => apiMutation<UserRecord>(`/api/users/${id}`,"PUT",input),
+  search:(query:string) => apiQuery<GlobalSearchResponse>(`/api/search?q=${encodeURIComponent(query)}`),
 };

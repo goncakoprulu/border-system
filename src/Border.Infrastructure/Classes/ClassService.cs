@@ -1,3 +1,4 @@
+using System.Data;
 using Border.Application.Auditing;
 using Border.Application.Auth;
 using Border.Application.Classes;
@@ -7,6 +8,7 @@ using Border.Infrastructure.Persistence;
 using Border.Infrastructure.Identity;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 namespace Border.Infrastructure.Classes;
 
@@ -171,16 +173,29 @@ internal sealed class ClassService(BorderDbContext dbContext, IAuditWriter audit
 
     public async Task<ClassOperationResult<ClassEnrollmentResponse>> EnrollStudentAsync(Guid classId, CreateEnrollmentRequest request, CancellationToken cancellationToken)
     {
-        var studioClass = await dbContext.StudioClasses.SingleOrDefaultAsync(x => x.Id == classId && !x.IsDeleted, cancellationToken);
-        if (studioClass is null || !await dbContext.Students.AnyAsync(x => x.Id == request.StudentId && !x.IsDeleted, cancellationToken)) return ClassOperationResult<ClassEnrollmentResponse>.NotFound();
-        var overlaps = await dbContext.ClassEnrollments.AnyAsync(x => x.StudioClassId == classId && x.StudentId == request.StudentId && x.Status == EnrollmentStatus.Active && (x.EndDate == null || x.EndDate >= request.StartDate), cancellationToken);
-        if (overlaps) return ClassOperationResult<ClassEnrollmentResponse>.Conflict("Öğrencinin bu sınıfta çakışan aktif bir kaydı bulunuyor.");
-        if (await ActiveEnrollmentCountAsync(classId, cancellationToken) >= studioClass.Capacity) return ClassOperationResult<ClassEnrollmentResponse>.Conflict($"Sınıf kapasitesi dolu ({studioClass.Capacity}/{studioClass.Capacity}).");
-        var enrollment = new ClassEnrollment { StudioClassId = classId, StudentId = request.StudentId, StartDate = request.StartDate, Status = EnrollmentStatus.Active };
-        dbContext.ClassEnrollments.Add(enrollment);
-        await dbContext.SaveChangesAsync(cancellationToken);
-        await auditWriter.WriteAsync("StudentEnrolled", nameof(ClassEnrollment), enrollment.Id.ToString(), null, new { enrollment.StudentId, enrollment.StudioClassId, enrollment.StartDate }, cancellationToken);
-        return ClassOperationResult<ClassEnrollmentResponse>.Success((await MapEnrollmentAsync(enrollment.Id, cancellationToken))!);
+        try
+        {
+            await using var transaction = dbContext.Database.IsRelational() ? await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken) : null;
+            var studioClass = await dbContext.StudioClasses.SingleOrDefaultAsync(x => x.Id == classId && !x.IsDeleted, cancellationToken);
+            if (studioClass is null || !await dbContext.Students.AnyAsync(x => x.Id == request.StudentId && !x.IsDeleted, cancellationToken)) return ClassOperationResult<ClassEnrollmentResponse>.NotFound();
+            var overlaps = await dbContext.ClassEnrollments.AnyAsync(x => x.StudioClassId == classId && x.StudentId == request.StudentId && x.Status == EnrollmentStatus.Active && (x.EndDate == null || x.EndDate >= request.StartDate), cancellationToken);
+            if (overlaps) return ClassOperationResult<ClassEnrollmentResponse>.Conflict("Öğrencinin bu sınıfta çakışan aktif bir kaydı bulunuyor.");
+            if (await ActiveEnrollmentCountAsync(classId, cancellationToken) >= studioClass.Capacity) return ClassOperationResult<ClassEnrollmentResponse>.Conflict($"Sınıf kapasitesi dolu ({studioClass.Capacity}/{studioClass.Capacity}).");
+            var enrollment = new ClassEnrollment { StudioClassId = classId, StudentId = request.StudentId, StartDate = request.StartDate, Status = EnrollmentStatus.Active };
+            dbContext.ClassEnrollments.Add(enrollment);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            await auditWriter.WriteAsync("StudentEnrolled", nameof(ClassEnrollment), enrollment.Id.ToString(), null, new { enrollment.StudentId, enrollment.StudioClassId, enrollment.StartDate }, cancellationToken);
+            if (transaction is not null) await transaction.CommitAsync(cancellationToken);
+            return ClassOperationResult<ClassEnrollmentResponse>.Success((await MapEnrollmentAsync(enrollment.Id, cancellationToken))!);
+        }
+        catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.SerializationFailure)
+        {
+            return ClassOperationResult<ClassEnrollmentResponse>.Conflict("Sınıf kaydı eşzamanlı olarak değişti. Güncel kapasiteyi kontrol edip tekrar deneyin.");
+        }
+        catch (DbUpdateException exception) when (exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.SerializationFailure })
+        {
+            return ClassOperationResult<ClassEnrollmentResponse>.Conflict("Sınıf kaydı eşzamanlı olarak değişti. Güncel kapasiteyi kontrol edip tekrar deneyin.");
+        }
     }
 
     public async Task<ClassOperationResult<ClassEnrollmentResponse>> EndEnrollmentAsync(Guid classId, Guid enrollmentId, EndEnrollmentRequest request, CancellationToken cancellationToken)

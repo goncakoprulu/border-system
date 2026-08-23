@@ -12,7 +12,8 @@
     "test:student-workspace": "node scripts/test-student-workspace.mjs",
     "test:dashboard": "node scripts/test-dashboard.mjs",
     "test:reports": "node scripts/test-reports.mjs",
-    "test:balances": "node scripts/test-balances.mjs"
+    "test:balances": "node scripts/test-balances.mjs",
+    "test:operational-audit": "node scripts/test-operational-audit.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
