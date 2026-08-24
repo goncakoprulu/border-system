@@ -146,18 +146,18 @@ public sealed class DemoDataSeeder(
     {
         var definitions = new[]
         {
-            C("hiphop-beginner", "Hip Hop Beginner", "volkan", "ana", 18, "Başlangıç", "16+", (DayOfWeek.Tuesday,19,0,20,15),(DayOfWeek.Thursday,19,0,20,15)),
-            C("hiphop-intermediate", "Hip Hop Intermediate", "volkan", "ana", 18, "Orta", "16+", (DayOfWeek.Tuesday,20,30,21,45),(DayOfWeek.Thursday,20,30,21,45)),
-            C("hiphop-advanced", "Hip Hop Advanced", "gonca", "a", 16, "İleri", "16+", (DayOfWeek.Monday,20,0,21,15),(DayOfWeek.Wednesday,20,0,21,15)),
-            C("hiphop-kids", "Hip Hop Kids", "ece", "b", 14, "Başlangıç", "8–12", (DayOfWeek.Saturday,11,0,12,0)),
-            C("kpop-beginner", "K-Pop Beginner", "deniz", "a", 20, "Başlangıç", "13+", (DayOfWeek.Tuesday,18,0,19,0),(DayOfWeek.Thursday,18,0,19,0)),
-            C("commercial", "Commercial Choreography", "gonca", "ana", 22, "Tüm seviyeler", "16+", (DayOfWeek.Monday,18,30,19,45),(DayOfWeek.Wednesday,18,30,19,45)),
-            C("heels", "Heels", "selin", "b", 16, "Başlangıç/Orta", "18+", (DayOfWeek.Tuesday,20,0,21,15),(DayOfWeek.Thursday,20,0,21,15)),
-            C("breaking", "Breaking Beginner", "mert", "workshop", 14, "Başlangıç", "14+", (DayOfWeek.Monday,19,0,20,15),(DayOfWeek.Wednesday,19,0,20,15)),
-            C("popping", "Popping", "can", "workshop", 14, "Tüm seviyeler", "14+", (DayOfWeek.Tuesday,20,0,21,15),(DayOfWeek.Thursday,20,0,21,15)),
-            C("house", "House", "deniz", "a", 16, "Orta", "16+", (DayOfWeek.Friday,20,0,21,15)),
-            C("contemporary", "Contemporary", "ece", "b", 15, "Tüm seviyeler", "16+", (DayOfWeek.Monday,18,30,19,45),(DayOfWeek.Wednesday,18,30,19,45)),
-            C("workshop", "Workshop / Choreo Class", "volkan", "workshop", 16, "Açık seviye", "16+", (DayOfWeek.Saturday,14,0,16,0)),
+            C("hiphop-beginner", "Hip Hop Beginner", "volkan", "ana", 18, "Başlangıç", "Genç Yetişkin", (DayOfWeek.Tuesday,19,0,20,15),(DayOfWeek.Thursday,19,0,20,15)),
+            C("hiphop-intermediate", "Hip Hop Intermediate", "volkan", "ana", 18, "Orta", "Genç Yetişkin", (DayOfWeek.Tuesday,20,30,21,45),(DayOfWeek.Thursday,20,30,21,45)),
+            C("hiphop-advanced", "Hip Hop Advanced", "gonca", "a", 16, "İleri", "Genç Yetişkin", (DayOfWeek.Monday,20,0,21,15),(DayOfWeek.Wednesday,20,0,21,15)),
+            C("hiphop-kids", "Hip Hop Kids", "ece", "b", 14, "Başlangıç", "Çocuk", (DayOfWeek.Saturday,11,0,12,0)),
+            C("kpop-beginner", "K-Pop Beginner", "deniz", "a", 20, "Başlangıç", "Genç", (DayOfWeek.Tuesday,18,0,19,0),(DayOfWeek.Thursday,18,0,19,0)),
+            C("commercial", "Commercial Choreography", "gonca", "ana", 22, "Advanced", "Genç Yetişkin", (DayOfWeek.Monday,18,30,19,45),(DayOfWeek.Wednesday,18,30,19,45)),
+            C("heels", "Heels", "selin", "b", 16, "Orta", "Yetişkin", (DayOfWeek.Tuesday,20,0,21,15),(DayOfWeek.Thursday,20,0,21,15)),
+            C("breaking", "Breaking Beginner", "mert", "workshop", 14, "Başlangıç", "Genç", (DayOfWeek.Monday,19,0,20,15),(DayOfWeek.Wednesday,19,0,20,15)),
+            C("popping", "Popping", "can", "workshop", 14, "Temel", "Genç", (DayOfWeek.Tuesday,20,0,21,15),(DayOfWeek.Thursday,20,0,21,15)),
+            C("house", "House", "deniz", "a", 16, "Orta", "Genç Yetişkin", (DayOfWeek.Friday,20,0,21,15)),
+            C("contemporary", "Contemporary", "ece", "b", 15, "Temel", "Genç Yetişkin", (DayOfWeek.Monday,18,30,19,45),(DayOfWeek.Wednesday,18,30,19,45)),
+            C("workshop", "Workshop / Choreo Class", "volkan", "workshop", 16, "Advanced", "Genç Yetişkin", (DayOfWeek.Saturday,14,0,16,0)),
         };
         var items = new List<ClassSeeded>();
         foreach (var definition in definitions)

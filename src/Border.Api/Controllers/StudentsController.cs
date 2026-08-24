@@ -46,7 +46,9 @@ public sealed class StudentsController(IStudentService studentService) : Control
     [HttpPut("{id:guid}")]
     public async Task<ActionResult<StudentDetailResponse>> UpdateStudent(Guid id, StudentUpsertRequest request, CancellationToken cancellationToken)
     {
-        var errors = StudentValidation.Validate(request);
+        var guardians = await studentService.GetGuardiansAsync(id, cancellationToken);
+        if (guardians is null) return NotFound();
+        var errors = StudentValidation.Validate(request, guardians.Count > 0);
         if (errors.Count > 0) return ValidationError(errors);
         var student = await studentService.UpdateStudentAsync(id, request, cancellationToken);
         return student is null ? NotFound() : Ok(student);
@@ -74,7 +76,9 @@ public sealed class StudentsController(IStudentService studentService) : Control
     [HttpPost("{studentId:guid}/guardians")]
     public async Task<ActionResult<GuardianResponse>> AddGuardian(Guid studentId, GuardianUpsertRequest request, CancellationToken cancellationToken)
     {
-        var errors = StudentValidation.Validate(request);
+        var student = await studentService.GetStudentAsync(studentId, false, cancellationToken);
+        if (student is null) return NotFound();
+        var errors = StudentValidation.Validate(request, StudentValidation.IsMinor(student.BirthDate));
         if (errors.Count > 0) return ValidationError(errors);
         var guardian = await studentService.AddGuardianAsync(studentId, request, cancellationToken);
         return guardian is null ? NotFound() : CreatedAtAction(nameof(GetGuardians), new { studentId }, guardian);
@@ -83,7 +87,9 @@ public sealed class StudentsController(IStudentService studentService) : Control
     [HttpPut("{studentId:guid}/guardians/{guardianId:guid}")]
     public async Task<ActionResult<GuardianResponse>> UpdateGuardian(Guid studentId, Guid guardianId, GuardianUpsertRequest request, CancellationToken cancellationToken)
     {
-        var errors = StudentValidation.Validate(request);
+        var student = await studentService.GetStudentAsync(studentId, false, cancellationToken);
+        if (student is null) return NotFound();
+        var errors = StudentValidation.Validate(request, StudentValidation.IsMinor(student.BirthDate));
         if (errors.Count > 0) return ValidationError(errors);
         var guardian = await studentService.UpdateGuardianAsync(studentId, guardianId, request, cancellationToken);
         return guardian is null ? NotFound() : Ok(guardian);
@@ -93,7 +99,12 @@ public sealed class StudentsController(IStudentService studentService) : Control
     public async Task<IActionResult> DeleteGuardian(Guid studentId, Guid guardianId, CancellationToken cancellationToken)
     {
         var deleted = await studentService.DeleteGuardianAsync(studentId, guardianId, cancellationToken);
-        return deleted == true ? NoContent() : NotFound();
+        return deleted switch
+        {
+            GuardianDeleteResult.Deleted => NoContent(),
+            GuardianDeleteResult.RequiredForMinor => ValidationError(new Dictionary<string, string[]> { ["Guardians"] = ["18 yaş altındaki öğrencilerde en az bir veli kaydı bulunmalıdır."] }),
+            _ => NotFound()
+        };
     }
 
     private bool CanArchive() => User.IsInRole(Roles.Admin) || User.IsInRole(Roles.Management);

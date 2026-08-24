@@ -84,9 +84,24 @@ internal sealed class StudentService(BorderDbContext dbContext, IAuditWriter aud
             RegistrationDate = cleaned.RegistrationDate
         };
         dbContext.Students.Add(student);
+        Guardian? guardian = null;
+        if (cleaned.Guardian is not null)
+        {
+            guardian = new Guardian
+            {
+                StudentId = student.Id,
+                FirstName = cleaned.Guardian.FirstName,
+                LastName = cleaned.Guardian.LastName,
+                Phone = cleaned.Guardian.Phone,
+                Relationship = "Veli"
+            };
+            dbContext.Guardians.Add(guardian);
+        }
         await dbContext.SaveChangesAsync(cancellationToken);
         await auditWriter.WriteAsync("StudentCreated", nameof(Student), student.Id.ToString(), null, new { student.FirstName, student.LastName, student.Status }, cancellationToken);
-        return new(Map(student, [], []), duplicateWarnings);
+        if (guardian is not null)
+            await auditWriter.WriteAsync("GuardianCreated", nameof(Guardian), guardian.Id.ToString(), null, new { guardian.StudentId, guardian.FirstName, guardian.LastName, guardian.Relationship }, cancellationToken);
+        return new(Map(student, guardian is null ? [] : [Map(guardian)], []), duplicateWarnings);
     }
 
     public async Task<StudentDetailResponse?> UpdateStudentAsync(Guid id, StudentUpsertRequest request, CancellationToken cancellationToken)
@@ -104,8 +119,39 @@ internal sealed class StudentService(BorderDbContext dbContext, IAuditWriter aud
         student.Notes = cleaned.Notes;
         student.Status = cleaned.Status;
         student.RegistrationDate = cleaned.RegistrationDate;
+        Guardian? changedGuardian = null;
+        object? oldGuardianValues = null;
+        if (cleaned.Guardian is not null)
+        {
+            Guardian? guardian = null;
+            if (cleaned.Guardian.Id.HasValue)
+                guardian = await dbContext.Guardians.SingleOrDefaultAsync(x => x.Id == cleaned.Guardian.Id.Value && x.StudentId == id, cancellationToken);
+            if (cleaned.Guardian.Id.HasValue && guardian is null) return null;
+            if (guardian is null)
+            {
+                guardian = new Guardian
+                {
+                    StudentId = id,
+                    FirstName = cleaned.Guardian.FirstName,
+                    LastName = cleaned.Guardian.LastName,
+                    Phone = cleaned.Guardian.Phone,
+                    Relationship = "Veli"
+                };
+                dbContext.Guardians.Add(guardian);
+            }
+            else
+            {
+                oldGuardianValues = new { guardian.FirstName, guardian.LastName, guardian.Phone };
+                guardian.FirstName = cleaned.Guardian.FirstName;
+                guardian.LastName = cleaned.Guardian.LastName;
+                guardian.Phone = cleaned.Guardian.Phone;
+            }
+            changedGuardian = guardian;
+        }
         await dbContext.SaveChangesAsync(cancellationToken);
         await auditWriter.WriteAsync("StudentUpdated", nameof(Student), student.Id.ToString(), oldValues, new { student.FirstName, student.LastName, student.Phone, student.Email, student.BirthDate, student.Gender, student.Notes, student.Status, student.RegistrationDate }, cancellationToken);
+        if (changedGuardian is not null)
+            await auditWriter.WriteAsync(oldGuardianValues is null ? "GuardianCreated" : "GuardianUpdated", nameof(Guardian), changedGuardian.Id.ToString(), oldGuardianValues, new { changedGuardian.StudentId, changedGuardian.FirstName, changedGuardian.LastName, changedGuardian.Phone, changedGuardian.Relationship }, cancellationToken);
         return await GetStudentAsync(id, false, cancellationToken);
     }
 
@@ -166,15 +212,17 @@ internal sealed class StudentService(BorderDbContext dbContext, IAuditWriter aud
         return Map(guardian);
     }
 
-    public async Task<bool?> DeleteGuardianAsync(Guid studentId, Guid guardianId, CancellationToken cancellationToken)
+    public async Task<GuardianDeleteResult> DeleteGuardianAsync(Guid studentId, Guid guardianId, CancellationToken cancellationToken)
     {
-        if (!await dbContext.Students.AnyAsync(x => x.Id == studentId && !x.IsDeleted, cancellationToken)) return null;
+        var student = await dbContext.Students.Include(x => x.Guardians).SingleOrDefaultAsync(x => x.Id == studentId && !x.IsDeleted, cancellationToken);
+        if (student is null) return GuardianDeleteResult.NotFound;
         var guardian = await dbContext.Guardians.SingleOrDefaultAsync(x => x.Id == guardianId && x.StudentId == studentId, cancellationToken);
-        if (guardian is null) return false;
+        if (guardian is null) return GuardianDeleteResult.NotFound;
+        if (StudentValidation.IsMinor(student.BirthDate) && student.Guardians.Count <= 1) return GuardianDeleteResult.RequiredForMinor;
         dbContext.Guardians.Remove(guardian);
         await dbContext.SaveChangesAsync(cancellationToken);
         await auditWriter.WriteAsync("GuardianDeleted", nameof(Guardian), guardian.Id.ToString(), new { guardian.StudentId, guardian.FirstName, guardian.LastName, guardian.Relationship }, null, cancellationToken);
-        return true;
+        return GuardianDeleteResult.Deleted;
     }
 
     private async Task<IReadOnlyCollection<DuplicateStudentResponse>> FindDuplicatesAsync(string? phone, string? email, Guid? excludedId, CancellationToken cancellationToken)
@@ -194,7 +242,11 @@ internal sealed class StudentService(BorderDbContext dbContext, IAuditWriter aud
     private static StudentUpsertRequest Clean(StudentUpsertRequest request) => request with
     {
         FirstName = request.FirstName.Trim(), LastName = request.LastName.Trim(), Phone = NormalizePhone(request.Phone), Email = Clean(request.Email)?.ToLowerInvariant(),
-        Gender = Clean(request.Gender), Notes = Clean(request.Notes)
+        Gender = Clean(request.Gender), Notes = Clean(request.Notes),
+        Guardian = request.Guardian is null ? null : request.Guardian with
+        {
+            FirstName = request.Guardian.FirstName.Trim(), LastName = request.Guardian.LastName.Trim(), Phone = NormalizePhone(request.Guardian.Phone) ?? string.Empty
+        }
     };
     private static GuardianUpsertRequest Clean(GuardianUpsertRequest request) => request with
     {

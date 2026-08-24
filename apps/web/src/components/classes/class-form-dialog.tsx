@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CircleAlert, LoaderCircle, Plus, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { FieldErrors, useFieldArray, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { applyApiFieldErrors, formErrorMessage } from "@/lib/form-errors";
-import { ClassDetail, ClassInput, classesApi, classKeys, classStatuses, classStatusLabels, dayLabels } from "@/lib/classes";
+import { ClassDetail, ClassInput, classesApi, classAgeGroups, classKeys, classLevels, classStatuses, classStatusLabels, dayLabels } from "@/lib/classes";
 import { classDetailHref } from "@/lib/routes";
 import { normalizeScheduleDay } from "@/lib/schedule-days";
 
@@ -26,19 +26,25 @@ const scheduleSchema = z.object({
   path: ["endTime"], message: "Bitiş saati başlangıç saatinden sonra olmalı.",
 });
 
-export const classFormSchema = z.object({
+const buildClassFormSchema = (existingLevel?: string | null, existingAgeGroup?: string | null) => z.object({
   name: z.string().trim().min(1, "Sınıf adı zorunludur.").max(160, "Sınıf adı en fazla 160 karakter olabilir."),
   description: z.string().max(2000, "Açıklama en fazla 2000 karakter olabilir."),
   instructorId: z.string().min(1, "Eğitmen seçin."),
   studioRoomId: z.string().min(1, "Stüdyo seçin."),
   capacity: z.number({ error: "Geçerli bir kapasite girin." }).int("Kapasite tam sayı olmalıdır.").min(1, "Kapasite 0'dan büyük olmalıdır.").max(500, "Kapasite en fazla 500 olabilir."),
-  level: z.string().max(80, "Seviye en fazla 80 karakter olabilir."),
-  ageGroup: z.string().max(80, "Yaş grubu en fazla 80 karakter olabilir."),
+  level: z.string(),
+  ageGroup: z.string(),
   status: z.enum(classStatuses),
   startDate: z.string().min(1, "Başlangıç tarihi zorunludur."),
   endDate: z.string(),
   schedules: z.array(scheduleSchema).max(14, "En fazla 14 program satırı eklenebilir."),
 }).superRefine((value, context) => {
+  if (value.level && !classLevels.some((option) => option === value.level) && value.level !== existingLevel) {
+    context.addIssue({ code: "custom", path: ["level"], message: "Geçerli bir seviye seçin." });
+  }
+  if (value.ageGroup && !classAgeGroups.some((option) => option === value.ageGroup) && value.ageGroup !== existingAgeGroup) {
+    context.addIssue({ code: "custom", path: ["ageGroup"], message: "Geçerli bir yaş grubu seçin." });
+  }
   if (value.endDate && value.startDate && value.endDate < value.startDate) {
     context.addIssue({ code: "custom", path: ["endDate"], message: "Bitiş tarihi başlangıçtan önce olamaz." });
   }
@@ -51,6 +57,7 @@ export const classFormSchema = z.object({
   });
 });
 
+export const classFormSchema = buildClassFormSchema();
 export type ClassFormValues = z.infer<typeof classFormSchema>;
 const topLevelFields = ["name", "description", "instructorId", "studioRoomId", "capacity", "level", "ageGroup", "status", "startDate", "endDate", "schedules"] as const;
 const today = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Istanbul" }).format(new Date());
@@ -67,7 +74,8 @@ export function ClassFormDialog({ open, onOpenChange, item }: { open: boolean; o
   const [submitError, setSubmitError] = useState<string>();
   const instructors = useQuery({ queryKey: classKeys.instructors, queryFn: classesApi.instructors, enabled: open });
   const rooms = useQuery({ queryKey: classKeys.rooms, queryFn: classesApi.rooms, enabled: open });
-  const { register, control, reset, handleSubmit, setError, formState: { errors } } = useForm<ClassFormValues>({ resolver: zodResolver(classFormSchema), defaultValues: defaults(item), shouldFocusError: true });
+  const schema = useMemo(() => buildClassFormSchema(item?.level, item?.ageGroup), [item?.ageGroup, item?.level]);
+  const { register, control, reset, handleSubmit, setError, formState: { errors } } = useForm<ClassFormValues>({ resolver: zodResolver(schema), defaultValues: defaults(item), shouldFocusError: true });
   const schedules = useFieldArray({ control, name: "schedules" });
 
   useEffect(() => {
@@ -138,8 +146,8 @@ export function ClassFormDialog({ open, onOpenChange, item }: { open: boolean; o
       {field("instructorId", "Eğitmen *", <select id="instructorId" aria-invalid={!!errors.instructorId} className="control" {...register("instructorId")}><option value="">Seçin</option>{instructors.data?.map((instructor) => <option key={instructor.id} value={instructor.id}>{instructor.fullName}</option>)}</select>)}
       {field("studioRoomId", "Stüdyo *", <select id="studioRoomId" aria-invalid={!!errors.studioRoomId} className="control" {...register("studioRoomId")}><option value="">Seçin</option>{rooms.data?.filter((room) => room.isActive && !room.isArchived).map((room) => <option key={room.id} value={room.id}>{room.name}{room.capacity ? ` · ${room.capacity} kişi` : ""}</option>)}</select>)}
       {field("capacity", "Kapasite *", <Input id="capacity" aria-invalid={!!errors.capacity} type="number" min={1} max={500} {...register("capacity", { valueAsNumber: true })} />)}
-      {field("level", "Seviye", <Input id="level" {...register("level")} />)}
-      {field("ageGroup", "Yaş grubu", <Input id="ageGroup" placeholder="Örn. 8–12" {...register("ageGroup")} />)}
+      {field("level", "Seviye", <select id="level" aria-invalid={!!errors.level} className="control" {...register("level")}><option value="">Seçin</option>{item?.level && !classLevels.some((option) => option === item.level) && <option value={item.level}>Mevcut kayıt: {item.level}</option>}{classLevels.map((level) => <option key={level} value={level}>{level}</option>)}</select>)}
+      {field("ageGroup", "Yaş grubu", <select id="ageGroup" aria-invalid={!!errors.ageGroup} className="control" {...register("ageGroup")}><option value="">Seçin</option>{item?.ageGroup && !classAgeGroups.some((option) => option === item.ageGroup) && <option value={item.ageGroup}>Mevcut kayıt: {item.ageGroup}</option>}{classAgeGroups.map((ageGroup) => <option key={ageGroup} value={ageGroup}>{ageGroup}</option>)}</select>)}
       <div />
       {field("startDate", "Başlangıç tarihi *", <Input id="startDate" aria-invalid={!!errors.startDate} type="date" {...register("startDate")} />)}
       {field("endDate", "Bitiş tarihi", <Input id="endDate" aria-invalid={!!errors.endDate} type="date" {...register("endDate")} />)}

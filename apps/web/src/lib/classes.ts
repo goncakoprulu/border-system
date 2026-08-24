@@ -3,6 +3,10 @@ import { scheduleDayLabels, scheduleDayTimeText } from "@/lib/schedule-days";
 
 export const classStatuses = ["Planned", "Active", "Paused", "Completed", "Cancelled"] as const;
 export type ClassStatus = (typeof classStatuses)[number];
+export const classLevels = ["Temel", "Başlangıç", "Orta", "İleri", "Advanced"] as const;
+export type ClassLevel = (typeof classLevels)[number];
+export const classAgeGroups = ["Çocuk", "Genç", "Genç Yetişkin", "Yetişkin"] as const;
+export type ClassAgeGroup = (typeof classAgeGroups)[number];
 export const classStatusLabels: Record<ClassStatus, string> = { Planned: "Planlandı", Active: "Aktif", Paused: "Duraklatıldı", Completed: "Tamamlandı", Cancelled: "İptal" };
 export const enrollmentStatusLabels = { Active: "Aktif", Frozen: "Donduruldu", Completed: "Tamamlandı", Cancelled: "İptal" } as const;
 export const dayLabels = scheduleDayLabels;

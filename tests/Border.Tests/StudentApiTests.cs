@@ -9,6 +9,7 @@ using Border.Domain.Entities;
 using Border.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -96,6 +97,55 @@ public sealed class StudentApiTests(StudentApiFactory factory) : IClassFixture<S
         using var client = CreateClient("Reception");
         var response = await SendMutationAsync(client, HttpMethod.Post, "/api/students", new StudentUpsertRequest(" ", "", null, "bad-email", null, null, null, StudentStatus.Active, default));
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task MinorStudent_RequiresAndStoresGuardianContact()
+    {
+        await factory.ResetAsync();
+        using var client = CreateClient("Reception");
+        var today = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(3));
+        var minorBirthDate = today.AddYears(-18).AddDays(1);
+        var request = new StudentUpsertRequest("Ece", "Acar", null, null, minorBirthDate, null, null, StudentStatus.Active, today);
+
+        var missingGuardian = await SendMutationAsync(client, HttpMethod.Post, "/api/students", request);
+        Assert.Equal(HttpStatusCode.BadRequest, missingGuardian.StatusCode);
+        var validation = await missingGuardian.Content.ReadFromJsonAsync<ValidationProblemDetails>();
+        Assert.Contains("GuardianFirstName", validation!.Errors.Keys);
+        Assert.Contains("GuardianLastName", validation.Errors.Keys);
+        Assert.Contains("GuardianPhone", validation.Errors.Keys);
+
+        var create = await SendMutationAsync(client, HttpMethod.Post, "/api/students", request with
+        {
+            Guardian = new StudentGuardianRequest(null, " Selin ", " Acar ", "0532 111 22 33")
+        });
+        create.EnsureSuccessStatusCode();
+        var result = await create.Content.ReadFromJsonAsync<CreateStudentResponse>(JsonOptions);
+        var guardian = Assert.Single(result!.Student.Guardians);
+        Assert.Equal("Selin", guardian.FirstName);
+        Assert.Equal("Acar", guardian.LastName);
+        Assert.Equal("05321112233", guardian.Phone);
+    }
+
+    [Fact]
+    public async Task MinorStudent_LastGuardianCannotBeDeleted()
+    {
+        await factory.ResetAsync();
+        using var client = CreateClient("Reception");
+        var today = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(3));
+        var request = new StudentUpsertRequest("Ece", "Acar", null, null, today.AddYears(-10), null, null, StudentStatus.Active, today,
+            new StudentGuardianRequest(null, "Selin", "Acar", "05321112233"));
+        var create = await SendMutationAsync(client, HttpMethod.Post, "/api/students", request);
+        create.EnsureSuccessStatusCode();
+        var result = await create.Content.ReadFromJsonAsync<CreateStudentResponse>(JsonOptions);
+        var guardian = Assert.Single(result!.Student.Guardians);
+
+        var removePhone = await SendMutationAsync(client, HttpMethod.Put, $"/api/students/{result.Student.Id}/guardians/{guardian.Id}",
+            new GuardianUpsertRequest("Selin", "Acar", "Veli", null, null));
+        Assert.Equal(HttpStatusCode.BadRequest, removePhone.StatusCode);
+
+        var delete = await SendMutationAsync(client, HttpMethod.Delete, $"/api/students/{result.Student.Id}/guardians/{guardian.Id}");
+        Assert.Equal(HttpStatusCode.BadRequest, delete.StatusCode);
     }
 
     [Fact]

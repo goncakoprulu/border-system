@@ -75,7 +75,14 @@ public sealed record StudentUpsertRequest(
     string? Gender,
     string? Notes,
     StudentStatus Status,
-    DateOnly RegistrationDate);
+    DateOnly RegistrationDate,
+    StudentGuardianRequest? Guardian = null);
+
+public sealed record StudentGuardianRequest(
+    Guid? Id,
+    string FirstName,
+    string LastName,
+    string Phone);
 
 public sealed record ChangeStudentStatusRequest(StudentStatus Status);
 
@@ -88,6 +95,7 @@ public sealed record GuardianUpsertRequest(
 
 public sealed record DuplicateStudentResponse(Guid Id, string FullName, string? Phone, string? Email, string MatchedOn);
 public sealed record CreateStudentResponse(StudentDetailResponse Student, IReadOnlyCollection<DuplicateStudentResponse> DuplicateWarnings);
+public enum GuardianDeleteResult { Deleted, NotFound, RequiredForMinor }
 
 public interface IStudentService
 {
@@ -100,5 +108,5 @@ public interface IStudentService
     Task<IReadOnlyCollection<GuardianResponse>?> GetGuardiansAsync(Guid studentId, CancellationToken cancellationToken);
     Task<GuardianResponse?> AddGuardianAsync(Guid studentId, GuardianUpsertRequest request, CancellationToken cancellationToken);
     Task<GuardianResponse?> UpdateGuardianAsync(Guid studentId, Guid guardianId, GuardianUpsertRequest request, CancellationToken cancellationToken);
-    Task<bool?> DeleteGuardianAsync(Guid studentId, Guid guardianId, CancellationToken cancellationToken);
+    Task<GuardianDeleteResult> DeleteGuardianAsync(Guid studentId, Guid guardianId, CancellationToken cancellationToken);
 }

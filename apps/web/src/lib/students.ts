@@ -22,7 +22,9 @@ export type StudentClassEnrollment = { enrollmentId: string; classId: string; cl
 export type StudentInput = {
   firstName: string; lastName: string; phone: string | null; email: string | null; birthDate: string | null;
   gender: string | null; notes: string | null; status: StudentStatus; registrationDate: string;
+  guardian: StudentGuardianInput | null;
 };
+export type StudentGuardianInput = { id: string | null; firstName: string; lastName: string; phone: string };
 export type GuardianInput = { firstName: string; lastName: string; relationship: string; phone: string | null; email: string | null };
 export type PagedStudents = { items: StudentListItem[]; page: number; pageSize: number; totalCount: number; totalPages: number };
 export type CreateStudentResult = { student: StudentDetail; duplicateWarnings: { id: string; fullName: string; matchedOn: string }[] };

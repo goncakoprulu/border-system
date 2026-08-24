@@ -487,6 +487,7 @@ function StudentDetailContent({ id }: { id: string }) {
       <GuardianFormDialog
         studentId={id}
         guardian={editingGuardian}
+        phoneRequired={(calculateAge(student.birthDate) ?? 18) < 18}
         open={guardianOpen}
         onOpenChange={setGuardianOpen}
       />

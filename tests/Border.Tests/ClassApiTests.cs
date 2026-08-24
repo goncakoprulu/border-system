@@ -72,6 +72,27 @@ public sealed class ClassApiTests(StudentApiFactory factory) : IClassFixture<Stu
     }
 
     [Fact]
+    public async Task ClassCreate_OnlyAcceptsConfiguredLevelAndAgeGroupValues()
+    {
+        await factory.ResetAsync();
+        var seed = await SeedAsync();
+        using var client = Client("Management");
+        var request = Request(seed.InstructorOneId, seed.RoomTwoId, new(DayOfWeek.Tuesday, new(12, 0), new(13, 0)));
+
+        var invalid = await MutationAsync(client, HttpMethod.Post, "/api/classes", request with { Level = "Uzman", AgeGroup = "8–12" });
+        Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+        var validation = await invalid.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.True(validation.GetProperty("errors").TryGetProperty("Level", out _));
+        Assert.True(validation.GetProperty("errors").TryGetProperty("AgeGroup", out _));
+
+        var valid = await MutationAsync(client, HttpMethod.Post, "/api/classes", request with { Level = "Advanced", AgeGroup = "Genç Yetişkin" });
+        valid.EnsureSuccessStatusCode();
+        var created = await valid.Content.ReadFromJsonAsync<ClassDetailResponse>(JsonOptions);
+        Assert.Equal("Advanced", created!.Level);
+        Assert.Equal("Genç Yetişkin", created.AgeGroup);
+    }
+
+    [Fact]
     public async Task StudioRoom_CreateUpdateValidateAndArchive_WorksEndToEnd()
     {
         await factory.ResetAsync(); using var client = Client("Management");

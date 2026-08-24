@@ -47,7 +47,9 @@ public sealed class ClassesController(IClassService classService) : ControllerBa
     [Authorize(Policy = Policies.ClassesManage)]
     public async Task<ActionResult<ClassDetailResponse>> UpdateClass(Guid id, StudioClassUpsertRequest request, CancellationToken cancellationToken)
     {
-        var errors = ClassValidation.Validate(request);
+        var existing = await classService.GetClassAsync(id, Scope(), false, cancellationToken);
+        if (existing is null) return NotFound();
+        var errors = ClassValidation.Validate(request, existing.Level, existing.AgeGroup);
         if (errors.Count > 0) return ValidationError(errors);
         return Operation(await classService.UpdateClassAsync(id, request, cancellationToken));
     }

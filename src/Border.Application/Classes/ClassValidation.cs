@@ -2,7 +2,7 @@ namespace Border.Application.Classes;
 
 public static class ClassValidation
 {
-    public static Dictionary<string, string[]> Validate(StudioClassUpsertRequest request)
+    public static Dictionary<string, string[]> Validate(StudioClassUpsertRequest request, string? existingLevel = null, string? existingAgeGroup = null)
     {
         var errors = new Dictionary<string, string[]>();
         if (string.IsNullOrWhiteSpace(request.Name)) errors[nameof(request.Name)] = ["Sınıf adı zorunludur."];
@@ -13,11 +13,14 @@ public static class ClassValidation
         if (request.StartDate == default) errors[nameof(request.StartDate)] = ["Başlangıç tarihi zorunludur."];
         if (request.EndDate.HasValue && request.EndDate < request.StartDate) errors[nameof(request.EndDate)] = ["Bitiş tarihi başlangıç tarihinden önce olamaz."];
         if (request.Description?.Trim().Length > 2000) errors[nameof(request.Description)] = ["Açıklama en fazla 2000 karakter olabilir."];
-        if (request.Level?.Trim().Length > 80) errors[nameof(request.Level)] = ["Seviye en fazla 80 karakter olabilir."];
-        if (request.AgeGroup?.Trim().Length > 80) errors[nameof(request.AgeGroup)] = ["Yaş grubu en fazla 80 karakter olabilir."];
+        if (!StudioClassOptions.IsValidLevel(request.Level) && !MatchesExisting(request.Level, existingLevel)) errors[nameof(request.Level)] = [$"Seviye şu değerlerden biri olmalıdır: {string.Join(", ", StudioClassOptions.Levels)}."];
+        if (!StudioClassOptions.IsValidAgeGroup(request.AgeGroup) && !MatchesExisting(request.AgeGroup, existingAgeGroup)) errors[nameof(request.AgeGroup)] = [$"Yaş grubu şu değerlerden biri olmalıdır: {string.Join(", ", StudioClassOptions.AgeGroups)}."];
         ValidateSchedules(request.Schedules, errors);
         return errors;
     }
+
+    private static bool MatchesExisting(string? value, string? existing) =>
+        !string.IsNullOrWhiteSpace(value) && !string.IsNullOrWhiteSpace(existing) && string.Equals(value.Trim(), existing.Trim(), StringComparison.Ordinal);
 
     public static Dictionary<string, string[]> Validate(ClassScheduleRequest request)
     {
